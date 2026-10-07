@@ -1,0 +1,79 @@
+### Install options ###
+#
+# Default value "<none>" means no default location will be
+# specified and gled will require either: a) GLEDSYS envrionment
+# variable to be set; or b) passing of datadir and libdir options to
+# executables.
+# If prefix is set BINDIR, LIBDIR and DATADIR will be set to proper
+# values unless you override them, too.
+# One should define prefix even if all the paths are overriden - gled build
+# uses special prefix value <none> to block install targets.
+prefix          =s      .       PREFIX          "<none>"
+bindir          =s      .       BINDIR          "<none>"
+libdir          =s      .       LIBDIR          "<none>"
+datadir         =s      .       DATADIR         "<none>"
+
+# Default blob-install location.
+blobdir         =s      .       BLOBDIR         "/opt/gled"
+
+### configure options ###
+#
+confdebug	!	.	CONFDEBUG	0
+reconfigure	!	.	RECONFIGURE	0
+help		!	.	HELP		0
+envsetupstem	=s	.	ENVSETUPSTEM	"build_env"
+makejopt	=s	.	MAKEJOPT	"<auto>"
+
+### compile/link options ###
+#
+ucpp		=s	.	USER_CPP_FLAGS	""
+ucxx		=s	.	USER_CXX_FLAGS	""
+uld		=s	.	USER_LD_FLAGS	""
+usepch		!	.	USE_PCH		0
+pchname         =s      .       PCH_NAME        "gled.pch.h"
+debug		!	.	DEBUG		0
+# ':' separated directories where foreign software is installed.
+# These will be added to cpp/ld flags and to gled environmnet scripts.
+external	=s	.	EXTERNAL	""
+# ':' separated directories where foreign software is installed.
+# These will only be added to cpp/ld flags.
+extrapaths	=s	.	EXTRA_PATHS	""
+
+### build configuration ###
+#
+# These variables get re-evaluated on reconfigure. The following
+# substitutions are performed:
+# <gitdescribe> gets replaced by `git describe --tags --dirty --always`,
+#               without a leading 'v', or by "unknown" outside a git tree.
+# <today>       gets replaced by { my $d=`date +%F`; chomp $d; $d; }
+buildversion	=s	.	BUILD_VERSION_IN  "<gitdescribe>"
+builddate	=s	.	BUILD_DATE_IN	  "<today>"
+# And these are fixed at first configure.
+noviewlibs	!	.	NOVIEWLIBS	0
+nornrlibs	!	.	NORNRLIBS	0
+rnr		=s	.	RENDERERS	"GL"
+nossl           !       .       NOSSL           0
+
+### libset configuration ###
+#
+# Libsets to build; can be <file:[filename]>, <auto>, <auto-prompt> or
+# ':' separated list of libset names. An entry <LibSet>=<dir> gives the
+# directory of a libset; the directory must be named <LibSet>.
+# <auto> takes all libsets found in LIBSET_PATH.
+libsets		=s	.	LIBSETS		"<auto-prompt>"
+
+# Directories that hold libset directories, <dir>/<LibSet>/Makefile;
+# ':' separated, relative to GLEDSYS. The first one with a libset wins.
+libsetpath	=s	.	LIBSET_PATH	"../libsets"
+
+# Built gled areas to search for more basic libsets; ':' separated.
+# A libset is found by its manifest, <area>/lib/<libset>.manifest; its
+# bin, cfg, lib, macros and perllib files are linked into GLEDSYS.
+base		=s	.	GLEDBASE	""
+
+### names of auto-generated files and directories
+#
+glasslist	=s	.	GLASS_LIST	"glass.list"
+gluedir		=s	.	GLUE_DIR	"glue"
+dictdir		=s	.	DICT_DIR	"dict"
+viewdir		=s	.	VIEW_DIR	"Views"

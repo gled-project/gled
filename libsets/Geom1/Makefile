@@ -1,0 +1,30 @@
+LIB_SET_NAME	  := Geom1
+LIB_SET_ID	  := 2
+REQUIRES_LIB_SETS := GledCore
+REQUIRES_EXTERNAL := DevIL
+
+BLESSED_DIRS	= Glasses
+BASE_DIRS	= Stones Tvor ACTC
+
+DICT_DIRS	= Glasses Stones
+VIEW_DIRS	= FL
+VIEW_FL_DIRS	= FL
+
+# libIL used to be linked against image libs (on most systems).
+# The latest version (1.7.2) is not, also whre it was before.
+# So ... until this is solved, I add the libs here.
+# BASE_LD_LIBS    = -lIL -lILU
+BASE_LD_LIBS    = -lIL -lILU
+
+#--------------------------------------------------------------
+include ${GLEDSYS}/make/make_base.inc
+#--------------------------------------------------------------
+
+LIBSET_TARGETS := # define additional targets (libraires built by default)
+
+#--------------------------------------------------------------
+include ${GLEDSYS}/make/make_targets.inc
+#--------------------------------------------------------------
+
+clean::
+distclean::

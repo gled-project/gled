@@ -1,0 +1,48 @@
+// Copyright (C) Matevz Tadel.
+// This file is part of Gled.
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#ifndef GledCore_WGlButton_H
+#define GledCore_WGlButton_H
+
+#include <Glasses/WGlWidget.h>
+#include <Gled/GledNS.h>
+
+namespace gled {
+
+class WGlButton : public WGlWidget
+{
+  MAC_RNR_FRIENDS(WGlButton);
+
+private:
+  void _init();
+
+protected:
+  ZLink<ZGlass>       mCbackBeta;       //  X{GS}  L{}
+  TString             mCbackMethodName; //  X{GRS} Ray{CbackReset} 7 Textor()
+  GledNS::MethodInfo* mCbackMethodInfo; //!
+
+  Int_t               mCbackValue;      //  X{GS}  7 Value()
+  TString             mCbackString;     //  X{GRS} 7 Textor()
+
+public:
+  WGlButton(const Text_t* n="WGlButton", const Text_t* t=0) :
+    WGlWidget(n,t) { _init(); }
+
+  virtual void EmitCbackResetRay() { mCbackMethodInfo = 0; }
+
+  GledNS::MethodInfo* GetCbackMethodInfo();
+
+  void MenuEnter(); // X{E}
+  void MenuExit();  // X{E}
+
+  void ExitGled();  //! X{Ed}
+
+#include "WGlButton.h7"
+  ClassDef(WGlButton, 1);
+}; // endclass WGlButton
+
+
+} // endnamespace gled
+
+#endif

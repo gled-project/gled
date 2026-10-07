@@ -1,0 +1,96 @@
+INSTALL - Gled build area
+=========================
+
+External software
+-----------------
+
+The base libsets need:
+
+ ROOT      6, tested with 6.40         https://root.cern
+ FLTK      1.3, with threads and GL    https://www.fltk.org
+ GLEW
+ DevIL     1.7                         https://openil.sourceforge.net
+ freetype
+ FTGL      Gled's fork of 2.1.2, built as a static library
+
+GledGTS needs GTS 0.7, Audio1 needs OpenAL and freealut. OpenSSL is used
+for authentication, see --nossl below. The gled-builder repository builds
+all of these into one prefix.
+
+Build procedure
+---------------
+
+1) Set up ROOT and point GLEDSYS at this directory, e.g. in (ba)sh:
+
+     export ROOTSYS=<ROOT installation>
+     export GLEDSYS=$PWD
+     export PATH=$ROOTSYS/bin:$PATH
+
+   configure takes GLEDSYS from the environment, so set it even if it is
+   already set for another Gled tree.
+
+2) Run ./configure with the options you need. Defaults are in
+   configure.rc. Options can be given as --<opt>=<val> or -<opt> <val>,
+   and their names can be abbreviated. The most relevant ones:
+
+      -external      ':' separated list of directories to include and link
+                     from; each <dir> implies -I<dir>/include and -L<dir>/lib
+      -libsets       ':' separated list of libset names, or
+                     <auto> for all libsets in -libsetpath,
+                     <auto-prompt> to choose among them, or
+                     <file:[filename]> for a file with one libset per line;
+                     an entry <LibSet>=<dir> builds the libset in <dir>,
+                     which must be named <LibSet>
+      -libsetpath    ':' separated directories holding libset directories,
+                     <dir>/<LibSet>/Makefile, relative to this directory;
+                     default ../libsets
+      -nossl         build without OpenSSL, so without authentication
+      -debug         implies -DDEBUG and -g (otherwise -O)
+      -ucpp <str>    user cpp-flags (e.g. -D_SOMETHING_)
+      -ucxx <str>    user cxx-flags
+      -uld  <str>    user ld-flags
+
+   configure writes build_config, a perl dump of the configuration with
+   the libsets in dependency order, Makefile.config, make/make_config.inc
+   and build_env.sh, and runs make depend in each libset.
+
+   configure --reconfigure [<libsets>] reuses the options in build_config;
+   use it to add or remove libsets, or after editing build_config by hand.
+   Changes of compiler flags or external directories need a full
+   configure.
+
+3) Set up the environment of this build and run make:
+
+     source build_env.sh
+     make -j8
+
+   make builds all libraries and executables and links them into bin/ and
+   lib/ here. It uses the default compiler; export CXX to use another.
+
+   gled-create glass and gled-create stone write a new class and add it
+   to the libset's glass.list or Stones/LinkDef.h, and make picks it up.
+   Run ./configure --reconfigure before a method of any glass takes the
+   new glass as an argument: project7 looks the glasses up in
+   build_config.
+
+Basing a build on existing builds
+---------------------------------
+
+To build a few libsets and reuse libsets that are already built
+elsewhere, pass the other build directories with -base:
+
+  ./configure -base <dir1>:<dir2> <other options>
+
+A dependency that is not found in -libsetpath is looked up in those
+builds by its manifest, <dir>/lib/<libset>.manifest, written when that
+build was made. configure takes the libset ID, its directory, its
+dependencies and its glasses from the manifest, compiles against the
+headers in that directory and links the libset's bin, cfg, lib, macros and
+perllib files into the local directory. Nothing in the base builds is run
+or modified.
+
+Libsets from other repositories
+-------------------------------
+
+Libsets kept in other repositories, such as gled-hep, are added with
+-libsetpath ../libsets:<dir> or with -libsets <LibSet>=<dir>.

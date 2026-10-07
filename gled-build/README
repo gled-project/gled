@@ -1,0 +1,16 @@
+README - Gled build area
+========================
+
+This directory is the build area of Gled. See ../README.md for what Gled
+is and how to build and run it, and INSTALL for the configure options.
+
+configure finds the libsets in ../libsets, resolves their dependencies and
+writes build_config, Makefile.config, make/make_config.inc and
+build_env.sh. make then builds each libset in its own directory and links
+its executables, libraries, macros, configuration and perl modules into
+bin/, lib/, macros/, cfg/ and perllib/ here, and its demos into
+demos/<LibSet>.
+
+The other directories hold the build itself: make/ the make fragments,
+libexec/ the code generators and install scripts, perllib/ their perl
+modules, cfg/ the class templates of gled-create, and test/ the tests.

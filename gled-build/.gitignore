@@ -1,0 +1,43 @@
+# Written by configure.
+/Makefile.config
+/build_config
+/build_env.sh
+/build_env.csh
+/config.status
+/include/gled-config-build.h
+/include/gled-config.h
+/make/make_config.inc
+/make/make_rnr.inc
+
+# The farm: links into the libsets, made by pre_build_install and
+# post_build_install. Only the files listed with ! are in the repository.
+/bin/*
+!/bin/gled-config.in
+!/bin/gled-create
+/cfg/*
+!/cfg/Glass_SKEL.cxx
+!/cfg/Glass_SKEL.h
+!/cfg/Rnr_GL_SKEL.cxx
+!/cfg/Rnr_GL_SKEL.h
+!/cfg/Stone_SKEL.cxx
+!/cfg/Stone_SKEL.h
+!/cfg/project7.rc
+/include/*
+!/include/gled-gcc-config.h
+/make/*
+!/make/make_base.inc
+!/make/make_codegen.inc
+!/make/make_defs.inc
+!/make/make_targets.inc
+/perllib/*
+!/perllib/Gled_ConfCat_Parser.pm
+!/perllib/Gled_Installer.pm
+!/perllib/Gled_Records.pm
+!/perllib/ParseConfig.pm
+/demos/
+/lib/
+/macros/
+
+# Local links to the externals and ROOT.
+/external
+/root

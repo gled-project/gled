@@ -1,0 +1,15 @@
+OPCODE - Optimized Collision Detection
+Copyright (C) 2001 Pierre Terdiman
+Homepage: http://www.codercorner.com/Opcode.htm
+
+The Opcode sources carry no license text. Pierre Terdiman's terms, as
+recorded in two places:
+
+  The SolidWorks Composer legal notices quote him: "The library is free.
+  No GPL or LGPL, you can do whatever you want with the code." Credit,
+  and a note to him by mail, are appreciated but not mandatory.
+
+  His page http://www.codercorner.com/Opcode.htm says: "You're free to use
+  them in any commercial or non-commercial program."
+
+The copy in Gled has changes for Gled's build.

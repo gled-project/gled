@@ -1,0 +1,27 @@
+Gled
+Copyright (C) 1999-2026 Matevz Tadel.
+
+Gled is free software: you can redistribute it and/or modify it under the
+terms of the GNU Lesser General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+Gled is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for
+more details.
+
+The GNU Lesser General Public License, version 3, is in COPYING.LESSER. It
+supplements the GNU General Public License, version 3, which is in COPYING.
+
+Third-party code in this repository keeps its own terms:
+
+  libsets/Var1/Opcode/
+      Opcode, Copyright (C) 2001 Pierre Terdiman. Free to use; see
+      LICENSE.txt there.
+  libsets/Geom1/ACTC/
+      ACTC, Copyright (c) 2000 Brad Grantham and Applied Conjecture.
+      BSD-style license; see COPYRIGHT there.
+  libsets/GledCore/RnrBase/Fl_Event_Enums.h
+      Excerpt of FLTK's Enumerations.H, Copyright 1998-2005 by Bill Spitzak
+      and others. GNU Library General Public License, version 2 or later.

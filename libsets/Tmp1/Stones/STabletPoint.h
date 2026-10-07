@@ -1,0 +1,72 @@
+// Copyright (C) Matevz Tadel.
+// This file is part of Gled.
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#ifndef Tmp1_STabletPoint_H
+#define Tmp1_STabletPoint_H
+
+#include "Stones/HTrans.h"
+
+#include <vector>
+
+namespace gled {
+
+class STabletPoint : public HPointF
+{
+public:
+  Float_t t, p;
+
+  STabletPoint() : HPointF(), t(0), p(0) {}
+  STabletPoint(Float_t _x, Float_t _y, Float_t _z, Float_t _t, Float_t _p) :
+    HPointF(_x, _y, _z), t(_t), p(_p) {}
+
+  STabletPoint& operator+=(const STabletPoint& a) { HPointF::operator+=(a); t += a.t; p += a.p; return *this; }
+  STabletPoint& operator-=(const STabletPoint& a) { HPointF::operator-=(a); t -= a.t; p -= a.p; return *this; }
+  STabletPoint& operator*=(Float_t f)             { HPointF::operator*=(f); t *= f;   p *= f;   return *this; }
+  STabletPoint& operator/=(Float_t d)             { return operator*=(1/d); }
+
+  void Print() const;
+
+  ClassDefNV(STabletPoint, 1);
+}; // endclass STabletPoint
+
+//------------------------------------------------------------------------------
+
+typedef std::vector<STabletPoint>            vSTabletPoint_t;
+typedef std::vector<STabletPoint>::iterator  vSTabletPoint_i;
+
+//------------------------------------------------------------------------------
+
+inline STabletPoint operator+(const STabletPoint& a, const STabletPoint& b)
+{
+   STabletPoint r(a);
+   return r += b;
+}
+
+inline STabletPoint operator-(const STabletPoint& a, const STabletPoint& b)
+{
+   STabletPoint r(a);
+   return r -= b;
+}
+
+inline STabletPoint operator*(const STabletPoint& a, Float_t b)
+{
+   STabletPoint r(a);
+   return r *= b;
+}
+
+inline STabletPoint operator*(Float_t b, const STabletPoint& a)
+{
+   STabletPoint r(a);
+   return r *= b;
+}
+
+inline STabletPoint operator/(const STabletPoint& a, Float_t b)
+{
+   STabletPoint r(a);
+   return r /= b;
+}
+
+} // endnamespace gled
+
+#endif

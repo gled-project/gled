@@ -1,0 +1,960 @@
+#!/usr/bin/perl
+
+# Copyright (C) Matevz Tadel.
+# This file is part of Gled.
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+use Data::Dumper;
+use Carp;
+use Cwd qw(realpath);
+use File::Basename qw(basename);
+use lib "$ENV{GLEDSYS}/perllib";
+use ParseConfig;
+use Gled_ConfCat_Parser;
+use Gled_Records;
+
+$CFGFILE = "build_config";
+
+########################################################################
+
+sub write_config
+{
+  $Data::Dumper::Indent   = 1;
+  $Data::Dumper::Purity   = 1;
+  $Data::Dumper::Sortkeys = 1;
+  open BC, ">$CFGFILE" or die "can't open $CFGFILE";
+  print BC "# Written by configure: the configuration (\$VAR1) and the libset\n" .
+           "# resolver (\$VAR2). After editing it, run './configure --reconfigure'.\n";
+  print BC Dumper($config, $resolver);
+  close BC;
+}
+
+########################################################################
+
+sub exec_or_die
+{
+  my $cmd = shift;
+  my $ret = `$cmd`;
+  croak "$cmd died" if $?;
+  return $ret
+}
+
+sub system_or_die
+{
+  my $cmd = shift;
+  system "$cmd" and die "$cmd died";
+}
+
+########################################################################
+
+# The libsets of the build are found in the LIBSET_PATH directories, as
+# <dir>/<LibSet>/Makefile, or given with their directory as <LibSet>=<dir>
+# in the libset list. %libset_dirs maps a libset name to its directory.
+
+sub abs_dir
+{
+  # Relative directories are taken relative to GLEDSYS. Symlinks are kept,
+  # so the paths written into the build stay the ones given.
+  my $d = shift;
+  $d = "$ENV{GLEDSYS}/$d" unless $d =~ m!^/!;
+  $d =~ s!/+$!!;
+  return $d;
+}
+
+sub libset_path_dirs
+{
+  return map { abs_dir($_) } grep { $_ ne '' } split(/\s*:\s*/, $config->{LIBSET_PATH});
+}
+
+sub find_local_libset
+{
+  # Returns the directory of libset $ls: the one given explicitly, else the
+  # first LIBSET_PATH directory that has it. Returns undef if there is none.
+  my $ls = shift;
+  return $libset_dirs{$ls} if exists $libset_dirs{$ls};
+  my @found = grep { -f "$_/$ls/Makefile" } libset_path_dirs();
+  return undef unless @found;
+  print "LibSet $ls taken from $found[0], also in " . join(', ', @found[1 .. $#found]) . "\n"
+    if @found > 1;
+  return $libset_dirs{$ls} = "$found[0]/$ls";
+}
+
+sub check_libset_dir
+{
+  # The build tools take the libset name from the name of its directory.
+  my ($ls, $dir) = @_;
+  die "LibSet $ls: directory $dir does not exist" unless -d $dir;
+  die "LibSet $ls: no Makefile in $dir" unless -f "$dir/Makefile";
+  my $real = basename(realpath($dir));
+  die "LibSet $ls: its directory must be named $ls, $dir is $real" unless $real eq $ls;
+}
+
+sub deduce_libset_dirs
+{
+  # All libsets in the LIBSET_PATH directories; the first one of a name wins.
+  my @l;
+  for my $d (libset_path_dirs())
+  {
+    opendir(my $dh, $d) or next;
+    for my $ls (sort grep { /^[A-Z]\w*$/ and -f "$d/$_/Makefile" } readdir($dh))
+    {
+      push @l, $ls if find_local_libset($ls) eq "$d/$ls";
+    }
+    closedir $dh;
+  }
+  return @l;
+}
+
+sub deduce_libset_list
+{
+  my @l;
+  if ($config->{LIBSETS} =~ m/^<file:([\w\.]+)>$/)
+  {
+    open F, $1 or croak "libset list file \"$1\" not found";
+    while ($_ = <F>)
+    {
+      next if /^\#/ or /^\s*$/;
+      chomp;
+      push @l, $_;
+    }
+    close F;
+  }
+  elsif($config->{LIBSETS} eq '<auto>' or $config->{LIBSETS} eq '<auto-prompt>')
+  {
+    @l = deduce_libset_dirs();
+    print "The following libsets will be configured for building:\n";
+    print "  " . join(':', @l) . "\n";
+    if ($config->{LIBSETS} eq '<auto-prompt>') {
+      print "Is this OK? <y or enter for ok> ";
+      my $answ = <STDIN>;
+      unless ($answ eq "\n" or $answ =~ m/^[yY]/) {
+	print "aborting then ...\n";
+	exit 0;
+      }
+    }
+  }
+  else
+  {
+    @l = split(/:/, $config->{LIBSETS});
+  }
+  # Entries <LibSet>=<dir> give the directory of a libset explicitly.
+  for (@l)
+  {
+    if (m/^(\w+)=(.+)$/)
+    {
+      $_ = $1;
+      $libset_dirs{$1} = abs_dir($2);
+    }
+    s!/$!!; # filter off trailing '/'s
+    die "libset name '$_' in the libset list is not a name; use <LibSet>=<dir> for a directory"
+      unless m/^\w+$/;
+  }
+  return @l;
+}
+
+########################################################################
+
+# A libset is either local, where its Makefile is asked, or in one of the
+# GLEDBASE areas, which are built gled trees. A libset in an area is known by
+# its manifest, <area>/lib/<libset>.manifest, written when the area was built;
+# the manifest also gives the directory of the libset. Nothing in the area is
+# run or linked into the build directory as a libset.
+
+sub find_base_manifest
+{
+  # Reads the manifest of libset $ls from the first GLEDBASE area that has
+  # one. Returns undef if none has.
+  my $ls = shift;
+  return $base_manifests{$ls} if exists $base_manifests{$ls};
+  for my $d (@base_dirs)
+  {
+    my $mf = "$d/lib/$ls.manifest";
+    next unless -e $mf;
+    my @recs = Gled_Records::read_file($mf);
+    my @lsr  = grep { $_->{_type} eq 'libset' } @recs;
+    die "$mf: expected one libset record for $ls"
+      unless @lsr == 1 and $lsr[0]{name} eq $ls;
+    print "Base $ls found in $d\n";
+    return $base_manifests{$ls} =
+      { 'Area'    => $d,
+        'LibSet'  => $lsr[0],
+        'Glasses' => [ grep { $_->{_type} eq 'glass' } @recs ] };
+  }
+  return undef;
+}
+
+sub is_local_libset
+{
+  my $ls = shift;
+  return defined find_local_libset($ls);
+}
+
+sub is_base_libset
+{
+  my $ls = shift;
+  return (! is_local_libset($ls) && defined find_base_manifest($ls));
+}
+
+sub libset_dir
+{
+  my $ls = shift;
+  return is_base_libset($ls) ? $base_manifests{$ls}{LibSet}{dir} : find_local_libset($ls);
+}
+
+sub direct_dependencies
+{
+  my $ls = shift;
+  if (is_local_libset($ls))
+  {
+    my $dir  = libset_dir($ls);
+    my $deps = exec_or_die("GLED_QUIET=1 make -s --no-print-directory -C $dir echo_requires_libsets 2>/dev/null");
+    return split(' ', $deps);
+  }
+  my $m = find_base_manifest($ls);
+  return defined $m ? @{$m->{LibSet}{requires}} : ();
+}
+
+sub collect_dependencies
+{
+  my $libset = shift;
+  my $deparr = shift;
+
+  for $d (direct_dependencies($libset)) {
+    unless( grep(/^$d$/, @$deparr) ) {
+      unless(is_local_libset($d) or defined find_base_manifest($d)) {
+	die "Dependency $d of libset $libset not found in LIBSET_PATH or GLEDBASE";
+      }
+      collect_dependencies($d, $deparr);
+      push @$deparr, $d;
+    }
+  }
+}
+
+########################################################################
+
+sub make_config_text
+{
+  # The make/make_config.inc settings that come from the configuration alone.
+  my $skipview = $config->{NOVIEWLIBS} ? "true" : "";
+  my $skiprnr  = $config->{NORNRLIBS}  ? "true" : "";
+
+  my @ext_areas;
+  push @ext_areas, split(':', $config->{EXTERNAL})    if $config->{EXTERNAL};
+  push @ext_areas, split(':', $config->{EXTRA_PATHS}) if $config->{EXTRA_PATHS};
+  my @user_cpp_elms;
+  push @user_cpp_elms, "-DDEBUG" if($config->{DEBUG});
+  push @user_cpp_elms, map { "-I$_/include" } @ext_areas;
+  push @user_cpp_elms, $config->{USER_CPP_FLAGS} if $config->{USER_CPP_FLAGS};
+
+  my $user_cpp = join(' ', @user_cpp_elms);
+  my @user_cxx_elms;
+  push @user_cxx_elms, ($config->{DEBUG} ? "-g" : "-O");
+  push @user_cxx_elms, $config->{USER_CXX_FLAGS} if $config->{USER_CXX_FLAGS};
+
+  my $user_cxx = join(' ', @user_cxx_elms);
+  my @user_ld_elms = map { "-L$_/lib" } @ext_areas;
+  push @user_ld_elms, $config->{USER_LD_FLAGS} if $config->{USER_LD_FLAGS};
+
+  my $user_ld  = join(' ', @user_ld_elms);
+
+  my $pchuse = $config->{USE_PCH} ? "yes" : "";
+  my $pchflg = $config->{USE_PCH} ? "-Winvalid-pch -include $config->{PCH_NAME}" : "";
+
+  my $pkgcfg_dirs = join(':', map { "$_/lib/pkgconfig" } @ext_areas);
+
+  my $sys_specific = system_make_config();
+
+  my $text = <<"fnord";
+# Generated by configure from build_config; do not edit. Change
+# build_config and run './configure --reconfigure' instead.
+
+GLED_PREFIX    := $config->{PREFIX}
+GLED_BIN_DIR   := $config->{BINDIR}
+GLED_LIB_DIR   := $config->{LIBDIR}
+GLED_DATA_DIR  := $config->{DATADIR}
+
+GLED_BLOB_DIR  := $config->{BLOBDIR}
+
+SKIP_VIEW_LIBS := $skipview
+SKIP_RNR_LIBS  := $skiprnr
+
+GLUE_DIR := $config->{GLUE_DIR}
+DICT_DIR := $config->{DICT_DIR}
+VIEW_DIR := $config->{VIEW_DIR}
+
+USER_CPP_FLAGS = $user_cpp
+USER_CXX_FLAGS = $user_cxx
+USER_LD_FLAGS  = $user_ld
+
+USE_PCH        = $pchuse
+PCHFLAGS       = $pchflg
+PCH_SRC_NAME   = $config->{PCH_NAME}
+
+PKGCFG_DIRS    = $pkgcfg_dirs
+
+################################################################
+# System '$system' specific settings
+################################################################
+GLED_SYSTEM := $config->{SYSTEM}
+$sys_specific
+fnord
+    
+  $text .= "NOSSL := 1\n\n" if $config->{NOSSL};
+  return $text;
+}
+
+sub libsets_make_text
+{
+  # The directory of each libset, local or base, and the include flags of
+  # each local libset; known once the libsets are resolved.
+  my $text = "\n################################################################\n" .
+             "# Libsets\n" .
+             "################################################################\n";
+  for my $f (@{$resolver->{LibSetList}}, @{$resolver->{BaseLibSetList}})
+  {
+    $text .= "GLED_LIBSET_DIR_$f\t:= $resolver->{LibName2LibSpecs}{$f}{Dir}\n";
+  }
+  for my $f (@{$resolver->{LibSetList}})
+  {
+    $text .= "GLED_LIBSET_INCL_$f\t:= $resolver->{LibName2LibSpecs}{$f}{CPP_FLAGS}\n";
+  }
+  return $text;
+}
+
+sub write_if_changed
+{
+  # Writes $text to $file unless the file already holds it, so that an
+  # unchanged generated make file keeps its time stamp and triggers nothing.
+  my ($file, $text) = @_;
+  if (open(my $fh, '<', $file))
+  {
+    local $/;
+    my $old = <$fh>;
+    close $fh;
+    return 0 if $old eq $text;
+  }
+  open(my $fh, '>', "$file.tmp") or die "can't write $file.tmp";
+  print $fh $text;
+  close $fh;
+  rename("$file.tmp", $file) or die "can't rename $file.tmp";
+  return 1;
+}
+
+sub write_make_rnr_inc
+{
+  # Written for a full configure *and* for --reconfigure: the renderer
+  # make rules depend on RENDERERS, which --reconfigure is allowed to
+  # change, and a stale make_rnr.inc silently keeps the old link lines.
+
+  my @Rnrs      = split(/:/, $config->{RENDERERS});
+  my $renderers = join(' ', @Rnrs);
+
+  my $text = "# Generated by configure for RENDERERS; do not edit.\n\n";
+  $text .= "RENDERERS\t:= $renderers\n\n";
+  for $rnr (@Rnrs)
+  {
+    my $extra_libs;
+    $extra_libs = "\${ROOT_LD_DIR} -lGLEW -lFTGL -Wl,--exclude-libs,libFTGL.a" if $rnr eq "GL";
+
+    $text .= "ABOVE_RNR_${rnr}_LIBS\t= \$(addsuffix _Rnr_${rnr}, \$(addprefix -l, \${REQUIRES_LIB_SETS}))\n";
+    $text .= "${rnr}_RNR_SRCS\t:= \$(wildcard Rnr/${rnr}/*.cxx) " .
+      "$config->{GLUE_DIR}/\${LIB_SET_NAME}_Rnr_${rnr}_LibSet.cxx\n";
+    $text .= "${rnr}_RNR_HDRS\t:= \$(wildcard Rnr/${rnr}/*.h) " .
+      "$config->{GLUE_DIR}/\${LIB_SET_NAME}_Rnr_${rnr}_LibSet.h\n";
+    $text .= "${rnr}_RNR_OBJS\t:= \$(${rnr}_RNR_SRCS:.cxx=.o)\n";
+    $text .= "${rnr}_RNR_LIB_NAME\t:= lib/lib\${LIB_SET_NAME}_Rnr_$rnr.\${LDEXT}\n";
+
+    $text .= "\${${rnr}_RNR_LIB_NAME}:\t \${${rnr}_RNR_OBJS}\n";
+    $text .= "\t\${ECHO} -X- Linking \$\@\n";
+    $text .= "\t\${MUTE} \${LD} \${LDSHAREDOPT} \${LDFLAGS} \${${rnr}_RNR_OBJS} -o \$\@ ${extra_libs} " .
+             "\${LDFLAGS_LIBSETS} -L\${GLEDSYS}/lib \${ABOVE_BASE_LIBS} \${ABOVE_VIEW_LIBS} \${ABOVE_RNR_${rnr}_LIBS} \n";
+    $text .= "RNR_SRCS += \${${rnr}_RNR_SRCS}\n";
+    $text .= "RNR_HDRS += \${${rnr}_RNR_HDRS}\n";
+    $text .= "RNR_OBJS += \${${rnr}_RNR_OBJS}\n";
+    $text .= "\n";
+  }
+  $text .= "RNR_LIBS := " . join(' ', map { "\${${_}_RNR_LIB_NAME}" } @Rnrs) . "\n";
+  write_if_changed("make/make_rnr.inc", $text);
+}
+
+sub system_make_config
+{
+  if($system eq 'Linux') {
+    return <<"fnord";
+LDSHAREDOPT = -shared
+LDEXT       = so
+fnord
+  }
+  elsif($system eq 'Darwin') {
+    return <<"fnord";
+LDSHAREDOPT = -dynamiclib -undefined dynamic_lookup
+LDEXT       = dylib
+fnord
+  }
+  croak "Unknown system."
+}
+
+
+########################################################################
+# MAIN
+########################################################################
+
+$config   = {};
+$resolver = {};
+$cmd_line = join(' ', @ARGV);
+$num_args = $#ARGV;
+$system   = 'unknown';
+
+$def_cfg = "$ENV{GLEDSYS}/configure.rc";
+
+my $cfg_parser = new ParseConfig(-defcfg=>$def_cfg,
+				 -useenv=>1,
+				 -hash=>$config);
+$cfg_parser->parse();
+
+if($config->{HELP}) {
+  print "usage: configure <options>\n";
+  print "Options:\n";
+  print `cat $def_cfg`;
+  exit 0;
+}
+
+unless ($config->{PREFIX} eq '<none>') {
+  $config->{BINDIR}  = "$config->{PREFIX}/bin"        if $config->{BINDIR}  eq '<none>';
+  $config->{LIBDIR}  = "$config->{PREFIX}/lib/gled"   if $config->{LIBDIR}  eq '<none>';
+  $config->{DATADIR} = "$config->{PREFIX}/share/gled" if $config->{DATADIR} eq '<none>';
+}
+
+$config->{CommandLine} = "./configure $cmd_line";
+
+$system = exec_or_die("uname -s"); chomp $system;
+if($system eq 'Linux' or $system eq 'Darwin')
+{
+  print "Configuring for '$system'.\n";
+
+  if ($config->{MAKEJOPT} eq "<auto>")
+  {
+    if ($system eq 'Linux')
+    {
+      $MAKEJOPT = "-j" . exec_or_die("grep -cE '^processor' /proc/cpuinfo");
+    }
+    elsif ($system eq 'Darwin')
+    {
+      $MAKEJOPT = "-j" . exec_or_die("sysctl -n machdep.cpu.thread_count");
+    }
+    else
+    {
+      $MAKEJOPT = "";
+    }
+    chomp $MAKEJOPT;
+  }
+  else
+  {
+    $MAKEJOPT = $config->{MAKEJOPT};
+  }
+}
+else
+{
+  print "Unsupported system '$system'. Reverting to 'Linux'.";
+  $system = 'Linux';
+}
+$config->{SYSTEM} = $system;
+
+croak "Environment variable ROOTSYS must be set" unless defined $ENV{ROOTSYS};
+croak "Environment variable GLEDSYS must be set" unless defined $ENV{GLEDSYS};
+
+if($config->{NORNRLIBS} or $config->{RENDERERS} eq "")
+{
+  $config->{NORNRLIBS} = 1;
+  $config->{RENDERERS} = "";
+}
+
+if ($config->{NOVIEWLIBS} == 1 and $config->{NORNRLIBS} == 0)
+{
+  croak "Rnr libs require View libs"
+}
+
+
+########################################################################
+# Basic build configure
+########################################################################
+
+if ($config->{RECONFIGURE} == 0)
+{
+  # Basic configure: write gled-config.h, makefile includes;
+  #                  read build_libsets and produce resolver   
+
+  print "LIBSETS='$config->{LIBSETS}'\n";
+  print "BASE='$config->{GLEDBASE}', SYS='$ENV{GLEDSYS}', CFG='$CFGFILE'\n";
+
+  my @Rnrs = split(/:/, $config->{RENDERERS});
+
+  ########################################################################
+  # config.status
+  open  CS, ">config.status";
+  print CS $cmd_line, "\n";
+  close CS;
+
+  ########################################################################
+  # bin/gled-config
+  system_or_die("$ENV{GLEDSYS}/libexec/gled_config_writer.pl " .
+                "bin/gled-config BLOB");
+
+  ########################################################################
+  # include/config.h
+  # bluntly include stuff for gcc; will need compiler option ...
+  open CH, ">include/gled-config.h";
+
+  print CH "// Generated by configure; do not edit.\n\n";
+  print CH "#ifndef GLED_CONFIG_H\n";
+  print CH "#define GLED_CONFIG_H\n\n";
+  print CH "#include \"gled-gcc-config.h\"\n\n";
+
+  print CH "#define GLED_SYSTEM           \"$config->{SYSTEM}\"\n";
+  print CH "\n";
+
+  unless ($config->{PREFIX} eq '<none>')
+  {
+    print CH "#define GLED_PREFIX         \"$config->{PREFIX}\"\n";
+    print CH "#define GLED_LIB_DIR        \"$config->{LIBDIR}\"\n";
+    print CH "#define GLED_DATA_DIR       \"$config->{DATADIR}\"\n";
+  }
+
+  $ch_line = "#define MAC_RNR_FRIENDS(_xx_) ";
+  $ch_line .= join('; ', map(" friend class _xx_ ## _${_}_Rnr", @Rnrs));
+  print CH $ch_line."\n\n";
+
+  print CH "#endif\n";
+  close CH;
+
+  ########################################################################
+  # Pre-compiled headers
+  if ($config->{USE_PCH} eq '<auto>')
+  {
+    my $gcc_ver = exec_or_die('echo -e "all:\n\t\${CXX} --version" | make -sf -');
+    
+    my ($gcc_major, $gcc_minor) = $gcc_ver =~ m/(\d+)\.(\d+)\.\d+/;
+    $config->{USE_PCH} = $gcc_major >= 4 ? 1 : 0;
+  }
+
+  ########################################################################
+  # make/make_config.inc, without the libsets: make runs in the libsets,
+  # which need it, come before the libsets are resolved.
+  write_if_changed("make/make_config.inc", make_config_text());
+
+}
+else
+{
+
+  ########################################################################
+  # Reconfigure: read build_libsets, build resolver
+
+  if($num_args > 1 || ($num_args == 1 && $#ARGV < 0))
+  {
+    print "reconfigure must be the only flag (with optional argument), e.g.\n";
+    print "  ./configure --reconfigure [<libsets>]\n";
+    print "All other options are taken from build_config.\n";
+    print "Either edit build_config or use full configure statement.\n";
+    print "Aborting.\n";
+    exit 1;
+  }
+
+  Gled_ConfCat_Parser::import_build_config();
+
+  if($#ARGV == 0)
+  {
+    $config->{LIBSETS} = shift;
+  }
+
+  print "LIBSETS='$config->{LIBSETS}'\n";
+  print "BASE='$config->{GLEDBASE}', SYS='$ENV{GLEDSYS}', CFG='$CFGFILE'\n";
+
+}
+
+
+########################################################################
+# make/make_rnr.inc  (both configure and --reconfigure)
+########################################################################
+
+write_make_rnr_inc();
+
+
+########################################################################
+# dump include/gled-config-build.h
+########################################################################
+
+my ($gitdescribe, $today);
+
+$gitdescribe = `git describe --tags --dirty --always 2>/dev/null`;
+chomp $gitdescribe;
+$gitdescribe =~ s/^v//;
+$gitdescribe = "unknown" if $gitdescribe eq "";
+
+$today = `date +%F`; chomp $today;
+
+for $var ("BUILD_VERSION", "BUILD_DATE")
+{
+  my $varin = "${var}_IN";
+  $config->{$var} = $config->{$varin};
+
+  $config->{$var} =~ s/<gitdescribe>/$gitdescribe/g;
+  $config->{$var} =~ s/<today>/$today/g;
+}
+
+write_if_changed("include/gled-config-build.h", << "FNORD");
+// Generated by configure; do not edit.
+
+#ifndef GLED_CONFIG_BUILD_H
+#define GLED_CONFIG_BUILD_H
+
+#define GLED_BUILD_VERSION    "$config->{BUILD_VERSION}"
+#define GLED_BUILD_DATE       "$config->{BUILD_DATE}"
+
+#endif
+FNORD
+
+########################################################################
+# initialize resolver and dependecy processing vars
+########################################################################
+
+$resolver = {};
+$resolver->{LibSetList} = [];
+
+@libsets      = ();
+@base_libsets = ();
+%deps         = ();
+%base_manifests = ();
+%libset_dirs    = ();
+
+$config->{LIBSET_PATH} = "../libsets" unless defined $config->{LIBSET_PATH};
+
+@base_dirs = map { abs_dir($_) } grep { $_ ne '' } split(/\s*:\s*/, $config->{GLEDBASE});
+
+
+########################################################################
+# configure of libset dependencies and building of proto resolver
+########################################################################
+
+########################################################################
+# Study libsets, assert directories exist, dependencies fulfilled
+for $lib_set (deduce_libset_list())
+{
+  my $dir = find_local_libset($lib_set);
+  die "LibSet $lib_set not found in LIBSET_PATH '$config->{LIBSET_PATH}'" unless defined $dir;
+  check_libset_dir($lib_set, $dir);
+  print "LibSet $lib_set in $dir\n";
+  push @libsets, $lib_set;
+
+  my @lsdeps = ();
+  collect_dependencies($lib_set, \@lsdeps);
+  $deps{$lib_set} = \@lsdeps;
+  if($#lsdeps==-1) {
+    push @ok_libsets, $lib_set;
+  }
+}
+
+########################################################################
+# grep for base libsets (those that need to be installed, but not bulit)
+for $ls (@libsets)
+{
+  for $lsd (@{$deps{$ls}})
+  {
+    unless (grep(/^$lsd$/, @libsets))
+    {
+      push(@base_libsets, $lsd) unless grep(/^$lsd$/, @base_libsets);
+    }
+  }
+}
+
+########################################################################
+# Resolve dependencies ... must build libsets in proper order
+my $npass = 1;
+eliminator: {
+  my $nok1 = $#ok_libsets;
+  print "Pass $npass, nok=$nok1\n" if $config->{CONFDEBUG};
+ls_loop:
+  for $ls (@libsets)
+  {
+    next ls_loop if grep(/^$ls$/, @ok_libsets);
+
+    for $lsd (@{$deps{$ls}})
+    {
+      print "Checking dep $lsd for libsets $ls ... " if $config->{CONFDEBUG};
+      if (grep(/^$lsd$/, @libsets))
+      {
+	unless (grep(/^$lsd$/, @ok_libsets))
+	{
+	  print "failed\n" if $config->{CONFDEBUG};
+	  next ls_loop;
+	}
+	print "ok\n" if $config->{CONFDEBUG};
+      }
+      elsif( grep(/^$lsd$/, @base_libsets) )
+      {
+	print "ok in base\n" if $config->{CONFDEBUG};
+      }
+      else
+      {
+	die "dependency $lsd not found";
+      }
+    }
+    push @ok_libsets, $ls;
+    print "Resolved $ls\n" if $config->{CONFDEBUG};
+  }
+  last eliminator if $#ok_libsets == $#libsets;
+
+  if ($nok1 == $#ok_libsets)
+  {
+    die "Failed resolving dependecies, ok=(".join(',',@ok_libsets).")"
+  }
+
+  print "Reentering ... final nok=$#ok_libsets\n" if $config->{CONFDEBUG};
+
+  redo eliminator;
+}
+
+########################################################################
+# Build resolver
+%libid_check = ();
+
+for $f (@ok_libsets, @base_libsets)
+{
+  my $lid;
+  if (is_base_libset($f)) {
+    $lid = $base_manifests{$f}{LibSet}{id};
+  } else {
+    $lid = exec_or_die("make -s --no-print-directory -C " . libset_dir($f) . " echo_libset_id");
+    chomp $lid;
+  }
+  die "LibId conflict for $f" if exists $libid_check{$lid};
+  $libid_check{$lid} = 1;
+  $resolver->{LibName2LibSpecs}{$f}{LibID} = $lid;
+  $resolver->{LibName2LibSpecs}{$f}{Dir}   = libset_dir($f);
+}
+
+$resolver->{BaseLibSetList} = \@base_libsets;
+$resolver->{LibSetList}     = \@ok_libsets;
+for $f (@base_libsets)
+{
+  $resolver->{BaseLibSetArea}{$f} = $base_manifests{$f}{Area} if is_base_libset($f);
+}
+
+for $f (@ok_libsets)
+{
+  $resolver->{LibName2LibSpecs}{$f}{Deps} = $deps{$f};
+  $resolver->{LibName2LibSpecs}{$f}{CPP_FLAGS} =
+    join(' ', (map { "-I" . libset_dir($_) } ($f, @{$deps{$f}})));
+}
+
+########################################################################
+# Write first version of build_config, uncomplete resolver
+write_config();
+write_if_changed("make/make_config.inc", make_config_text() . libsets_make_text());
+
+
+########################################################################
+# Create Makefile.config
+########################################################################
+
+{
+  my $subdirs     = join(' ', @{$resolver->{LibSetList}});
+  my $libset_dirs = join(' ', map { libset_dir($_) } @{$resolver->{LibSetList}});
+
+  open M, ">Makefile.config";
+  print M <<"FNORD";
+# Generated by configure; do not edit.
+# Use './configure --reconfigure <libsets>' to change affected libsets
+
+GLED_PREFIX    := $config->{PREFIX}
+GLED_BIN_DIR   := $config->{BINDIR}
+GLED_LIB_DIR   := $config->{LIBDIR}
+GLED_DATA_DIR  := $config->{DATADIR}
+
+GLED_BLOB_DIR  := $config->{BLOBDIR}
+
+SUBDIRS        := $subdirs
+LIBSET_DIRS    := $libset_dirs
+BUILD_FILES    := Makefile.config $CFGFILE bin/gled-config \\
+	make/make_config.inc make/make_rnr.inc include/gled-config.h \\
+	$config->{ENVSETUPSTEM}.sh $config->{ENVSETUPSTEM}.csh
+
+FNORD
+
+  print M "all:\n\n";
+  print M "\%:\n";
+  for $f (@{$resolver->{LibSetList}})
+  {
+    print M "\t\${MAKE} -C " . libset_dir($f) . " \$\@\n";
+  }
+
+  close M;
+}
+
+
+########################################################################
+# Let libsets put build-related things into top build environment
+########################################################################
+
+########################################################################
+# Make build_install from BaseLibSets elements. For a libset from a GLEDBASE
+# area, link the same directories its build_install would (BUILD_INSTALL_DIRS
+# in make/make_base.inc) without running its Makefile.
+for $f (@{$resolver->{BaseLibSetList}})
+{
+  if (is_base_libset($f)) {
+    print "-I- Build-install of $f from $base_manifests{$f}{Area}\n";
+    system_or_die("$ENV{GLEDSYS}/libexec/gled_install_dirs.pl -rs $ENV{GLEDSYS} " .
+                  libset_dir($f) . " bin cfg lib libexec macros perllib");
+  } else {
+    system_or_die("make -C " . libset_dir($f) . " build_install");
+  }
+}
+
+########################################################################
+# Make pre_build_install from local LibSets
+for $f (@{$resolver->{LibSetList}})
+{
+  system_or_die("make -C " . libset_dir($f) . " pre_build_install");
+}
+
+########################################################################
+# Generate catalogs, dictionaries, views and Rnr bindings
+for $f (@{$resolver->{LibSetList}})
+{
+  system_or_die("make ${MAKEJOPT} -C " . libset_dir($f) . " pre_depend");
+}
+
+
+########################################################################
+# Merge libset catalogs into resolver
+########################################################################
+
+for $f (grep { is_base_libset($_) } @{$resolver->{BaseLibSetList}})
+{
+  print "# Generating resolver for base LibSet $f\n";
+  my $m   = $base_manifests{$f};
+  my $lid = $m->{LibSet}{id};
+  $resolver->{LibID2LibSetName}{$lid} = $f;
+  for my $g (@{$m->{Glasses}})
+  {
+    $resolver->{GlassName2GlassSpecs}{$g->{name}} =
+    {
+      'LibSetName' => $f,
+      'ClassName'  => $g->{name},
+      'LibID'      => $lid,
+      'ClassID'    => $g->{class_id},
+      'RnrClass'   => (exists $g->{opts}{rnr} ? $g->{opts}{rnr} : ""),
+      'FileStem'   => libset_dir($f) . "/$g->{stem}"
+    };
+  }
+}
+
+for $f ((grep { not is_base_libset($_) } @{$resolver->{BaseLibSetList}}),
+	@{$resolver->{LibSetList}})
+{
+  print "# Generating resolver for LibSet $f\n";
+  Gled_ConfCat_Parser::parse_catalog(libset_dir($f));
+  $resolver->{LibID2LibSetName}{$CATALOG->{LibID}} = $CATALOG->{LibSetName};
+  for $c (@{$CATALOG->{ClassList}})
+  {
+    my $file_stem = libset_dir($f) . "/$CATALOG->{Classes}{$c}{Stem}";
+    $resolver->{GlassName2GlassSpecs}{$c} =
+    {
+      'LibSetName' => $f,
+      'ClassName'  => $c,
+      'LibID'      => $CATALOG->{LibID},
+      'ClassID'    => $CATALOG->{Classes}{$c}{ClassID},
+      'RnrClass'   => $CATALOG->{Classes}{$c}{RnrClass},
+      'FileStem'   => $file_stem
+    };
+  }
+}
+
+########################################################################
+# Write final version of build_config, full glass catalog included
+write_config();
+
+########################################################################
+# Now run make depend
+for $f (@{$resolver->{LibSetList}})
+{
+  system_or_die("make ${MAKEJOPT} -C " . libset_dir($f) . " depend");
+}
+
+
+########################################################################
+# Create Environment Files
+########################################################################
+
+{
+  my @exts = split(/:/, $config->{EXTERNAL});
+  my $extbin, $extlib, $extman, $ldpathenv, $sysspec_sh, $sysspec_csh;
+  $extbin = join(':', (map { "$_/bin"} @exts));
+  $extlib = join(':', (map { "$_/lib"} @exts));
+  $extman = join(':', (map { "$_/man"} @exts));
+
+  $ldpathenv = "LD_LIBRARY_PATH";
+  if($system eq 'Darwin')
+  {
+    $ldpathenv   = "DYLD_LIBRARY_PATH";
+    $sysspec_sh  = "export MACOSX_DEPLOYMENT_TARGET=10.5";
+    $sysspec_csh = "setenv MACOSX_DEPLOYMENT_TARGET 10.5";
+  }
+
+  open SH, ">$config->{ENVSETUPSTEM}.sh";
+  print SH <<"FNORD";
+# Generated by configure; do not edit.
+# This is environment for *this* gled build
+# Use as: . $config->{ENVSETUPSTEM}.sh
+# Can be run from anywhere
+
+export ROOTSYS="$ENV{ROOTSYS}"
+export GLEDSYS="$ENV{GLEDSYS}"
+
+PATH="\$GLEDSYS"/bin:"\$ROOTSYS"/bin:"$extbin":\$PATH
+$ldpathenv="\$GLEDSYS"/lib:"\$ROOTSYS"/lib:"$extlib":\$$ldpathenv
+MANPATH="$extman":\$MANPATH
+
+export PATH $ldpathenv MANPATH
+
+$sysspec_sh
+FNORD
+  close SH;
+
+  open CSH, ">$config->{ENVSETUPSTEM}.csh";
+  print CSH <<"FNORD";
+# Generated by configure; do not edit.
+# This is environment for *this* gled build
+# Use as: . $config->{ENVSETUPSTEM}.csh
+# Can be run from anywhere
+
+setenv ROOTSYS "$ENV{ROOTSYS}"
+setenv GLEDSYS "$ENV{GLEDSYS}"
+
+setenv PATH "\$GLEDSYS"/bin:"\$ROOTSYS"/bin:"$extbin":\${PATH}
+if ( \$?$ldpathenv ) then
+  setenv $ldpathenv "\$GLEDSYS"/lib:"\$ROOTSYS"/lib:"$extlib":\${$ldpathenv}
+else
+  setenv $ldpathenv "\$GLEDSYS"/lib:"\$ROOTSYS"/lib:"$extlib"
+endif
+if ( \$?MANPATH ) then 
+  setenv MANPATH "$extman":\${MANPATH}
+else
+  setenv MANPATH "$extman"
+endif
+
+$sysspec_csh
+FNORD
+  close CSH;
+}
+
+
+########################################################################
+# The End
+########################################################################
+
+# print Dumper(\@libsets);
+# print Dumper(\%deps);
+# print Dumper(\@ok_libsets);
+# print Dumper(\@base_libsets);
+# print Dumper($resolver);

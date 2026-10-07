@@ -1,0 +1,56 @@
+// Copyright (C) Matevz Tadel.
+// This file is part of Gled.
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#ifndef GledCore_ZFilterAggregator_H
+#define GledCore_ZFilterAggregator_H
+
+#include <Glasses/ZMirFilter.h>
+#include <Glasses/ZHashList.h>
+
+namespace gled {
+
+class ZFilterAggregator : public ZMirFilter {
+  MAC_RNR_FRIENDS(ZFilterAggregator);
+
+private:
+  void _init();
+
+protected:
+  Bool_t	bStrongNone;	// X{gS} 7 Bool(-join=>1)
+  Bool_t	bPreemptNone;	// X{gS} 7 Bool()
+  Bool_t	bPreemptAllow;	// X{gS} 7 Bool(-join=>1)
+  Bool_t	bPreemptDeny;	// X{gS} 7 Bool()
+
+  ZLink<ZHashList>  mFilters;	// X{gS} L{}
+
+public:
+  ZFilterAggregator(const Text_t* n="ZFilterAggregator", const Text_t* t=0) :
+    ZMirFilter(n,t) { _init(); }
+
+  UChar_t BuildPreemptionBits();
+
+  virtual Result_e FilterMIR(ZMIR& mir);
+
+#include "ZFilterAggregator.h7"
+  ClassDef(ZFilterAggregator, 1);
+}; // endclass ZFilterAggregator
+
+
+/**************************************************************************/
+// Inlines
+/**************************************************************************/
+
+inline
+UChar_t ZFilterAggregator::BuildPreemptionBits()
+{
+  UChar_t res = 0;
+  if(bPreemptNone)  res |= ZMirFilter::R_None;
+  if(bPreemptAllow) res |= ZMirFilter::R_Allow;
+  if(bPreemptDeny)  res |= ZMirFilter::R_Deny;
+  return res;
+}
+
+} // endnamespace gled
+
+#endif
