@@ -22,6 +22,10 @@ Third-party code in this repository keeps its own terms:
   libsets/Geom1/ACTC/
       ACTC, Copyright (c) 2000 Brad Grantham and Applied Conjecture.
       BSD-style license; see COPYRIGHT there.
+  libsets/RootGeo/Stones/GeoMesh.cxx
+      Adapted from REveGeoPolyShape and REveGluTess of ROOT's Eve7, by
+      Matevz Tadel and Alja Mrak-Tadel. ROOT is distributed under the GNU
+      Lesser General Public License, version 2.1 or later.
   libsets/GledCore/RnrBase/Fl_Event_Enums.h
       Excerpt of FLTK's Enumerations.H, Copyright 1998-2005 by Bill Spitzak
       and others. GNU Library General Public License, version 2 or later.

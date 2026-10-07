@@ -6,9 +6,10 @@
 #define RootGeo_GeoUserData_H
 
 #include <TObject.h>
-class TGLFaceSet;
 
 namespace gled {
+
+class GeoMesh;
 
 class GeoUserData : public TObject {
 
@@ -19,11 +20,12 @@ protected:
 
 public:
   Bool_t	bIsImported;
-  TGLFaceSet*	fFaceSet;
+  GeoMesh*	fMesh;       //!
 
-  GeoUserData(Bool_t impp=false, TGLFaceSet *fs=0) :
-    bIsImported(impp),fFaceSet(fs)
+  GeoUserData(Bool_t impp=false) :
+    bIsImported(impp), fMesh(0)
   { _init(); }
+  virtual ~GeoUserData();
 
 #include "GeoUserData.h7"
   ClassDef(GeoUserData, 1);

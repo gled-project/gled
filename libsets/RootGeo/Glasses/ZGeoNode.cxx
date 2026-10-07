@@ -19,8 +19,9 @@ using namespace gled;
 #include <TGeoMatrix.h>
 #include <TROOT.h>
 #include <TFile.h>
+#include <Stones/GeoMesh.h>
+
 #include <TBuffer3D.h>
-#include <TGLFaceSet.h>
 #include <TColor.h>
 
 typedef std::list<ZGeoNode*>           lpZGeoNode_t;
@@ -60,7 +61,7 @@ void ZGeoNode::SetTNode(TGeoNode* n)
 
 void ZGeoNode::AssertUserData()
 {
-  // Creates TGLFaceSet object rendered by ZGeoNode_GL_Rnr
+  // Creates the GeoMesh rendered by ZGeoNode_GL_Rnr
   // and saves it in TGeoVolume.
 
   TGeoVolume* v = GetVolume();
@@ -72,12 +73,11 @@ void ZGeoNode::AssertUserData()
       v->SetField(userdata);
     }
 
-    if (userdata->fFaceSet == 0) {
+    if (userdata->fMesh == 0) {
       TGeoVolume* vol = GetVolume();
       const TBuffer3D& buff = GetVolume()->GetShape()->
 	GetBuffer3D(TBuffer3D::kRawSizes|TBuffer3D::kRaw, false);
-      TGLFaceSet* fs = new TGLFaceSet(buff);
-      userdata->fFaceSet = fs;
+      userdata->fMesh = new GeoMesh(buff);
       userdata->bIsImported = true;
       vol->SetField(userdata);
     }

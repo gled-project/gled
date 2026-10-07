@@ -213,5 +213,6 @@ void setup_default_gui()
 
 void spawn_default_gui()
 {
+  ASSERT_MACRO(gled_view_globals);
   Gled::theOne->SpawnEye(0, g_shell, "GledCore", "FTW_Shell");
 }

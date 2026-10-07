@@ -8,6 +8,7 @@
 //
 
 #include "GeoUserData.h"
+#include "GeoMesh.h"
 
 using namespace gled;
 
@@ -15,5 +16,10 @@ using namespace gled;
 
 void GeoUserData::_init()
 {}
+
+GeoUserData::~GeoUserData()
+{
+  delete fMesh;
+}
 
 /**************************************************************************/
