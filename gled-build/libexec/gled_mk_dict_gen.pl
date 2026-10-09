@@ -95,7 +95,7 @@ open(FOO, ">$dict/${stem}_LinkDef.h") or croak "can't write $dict/${stem}_LinkDe
 print FOO $linkdef;
 close FOO;
 
-my $exe = "rootcling -f $dict/${stem}_Dict.cc " .
+my $exe = "$ENV{ROOTSYS}/bin/rootcling -f $dict/${stem}_Dict.cc " .
           "-I. $ENV{CPPFLAGS} -I$ENV{ROOTSYS}/include " .
           join(" ", @hdrs) . " $dict/${stem}_LinkDef.h";
 print $exe."\n";

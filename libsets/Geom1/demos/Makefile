@@ -1,10 +1,10 @@
 CXX		= g++
 CC		= gcc
 LD		= g++
-CPPFLAGS	= $(shell make -s -C ${GLEDSYS}/Geom1 echo_cppflags)
-CXXFLAGS	= $(shell make -s -C ${GLEDSYS}/Geom1 echo_cxxflags)
-LDFLAGS		= $(shell make -s -C ${GLEDSYS}/Geom1 echo_ldsharedopt)
-LDEXT           = $(shell make -s -C ${GLEDSYS}/Geom1 echo_ldext)
+CPPFLAGS	= $(shell make -s -C .. echo_cppflags)
+CXXFLAGS	= $(shell make -s -C .. echo_cxxflags)
+LDFLAGS		= $(shell make -s -C .. echo_ldsharedopt)
+LDEXT           = $(shell make -s -C .. echo_ldext)
 
 SRCS		= $(wildcard *.cxx)
 TGTLIBS		= $(SRCS:.cxx=.${LDEXT})
@@ -19,7 +19,7 @@ TGTLIBS		= $(SRCS:.cxx=.${LDEXT})
 
 %_Dict.cc %_Dict.h: %.h %_LinkDef.h
 	@echo Generating dictionary for $*
-	rootcint -f $@ -c $*.h $*_LinkDef.h
+	rootcling -f $@ $*.h $*_LinkDef.h
 
 %.${LDEXT}: %.o # %_Dict.o
 	${LD} ${LDFLAGS} -o $@ $^

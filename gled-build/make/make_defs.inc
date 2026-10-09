@@ -95,11 +95,15 @@ export MUTE ECHO
 ROOTLIBS  = $(shell ${ROOT_CONFIG} --noauxlibs --libs)
 ROOTGLIBS = $(shell ${ROOT_CONFIG} --noauxlibs --glibs)
 
-# fltk-config started adding lib-patg and -rpath, eg:
+# fltk-config of an FLTK in a private prefix adds the lib-path and -rpath, eg:
 #   -L/opt/gled/lib -Wl,-rpath,/opt/gled/lib -lfltk ...
-# so we chomp the first two pieces off.
-FLTKLIBS  = $(shell ${FLTK_CONFIG} --ldflags --use-gl | perl -pe 's/[^ ]+ [^ ]+ //;') -lGLEW
-GUILIBS	  = ${FLTKLIBS}
+# so we drop those; the system FLTK prints only the libraries.
+FLTKLIBS  = $(shell ${FLTK_CONFIG} --ldflags --use-gl | perl -pe 's/(^|\s)(-L\S+|-Wl,-rpath,\S+)//g;') -lGLEW
+# gled.cxx calls XInitThreads(); a static FLTK listed -lX11, a shared one does not.
+GUILIBS	  = ${FLTKLIBS} -lX11
+# For the GL renderers and the Pupils; the libraries of a shared FLTK do not
+# bring GL and GLU along.
+GLLIBS    = -lGLEW -lGLU -lGL
 
 SYSLIBS	= -lcrypto -lssl -lm -ldl
 

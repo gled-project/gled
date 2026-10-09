@@ -354,7 +354,7 @@ sub write_make_rnr_inc
   for $rnr (@Rnrs)
   {
     my $extra_libs;
-    $extra_libs = "\${ROOT_LD_DIR} -lGLEW -lFTGL -Wl,--exclude-libs,libFTGL.a" if $rnr eq "GL";
+    $extra_libs = "\${ROOT_LD_DIR} \${GLLIBS} -lFTGL -Wl,--exclude-libs,libFTGL.a" if $rnr eq "GL";
 
     $text .= "ABOVE_RNR_${rnr}_LIBS\t= \$(addsuffix _Rnr_${rnr}, \$(addprefix -l, \${REQUIRES_LIB_SETS}))\n";
     $text .= "${rnr}_RNR_SRCS\t:= \$(wildcard Rnr/${rnr}/*.cxx) " .

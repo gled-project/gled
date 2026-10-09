@@ -70,7 +70,7 @@ bin/gled: gled.o ${BASE_LIB_NAME} ${VIEW_LIB_NAME}
 ${PUPILS_LIB}: ${PUPILS_OBJS} lib/libGledCore_Rnr_GL.${LDEXT}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDSHAREDOPT} ${LDFLAGS} ${PUPILS_OBJS} -o $@ \
-	  ${ROOT_LD_DIR} ${FLTKLIBS} -Llib -l${LIB_SET_NAME}_Rnr_GL
+	  ${ROOT_LD_DIR} ${FLTKLIBS} ${GLLIBS} -Llib -l${LIB_SET_NAME}_Rnr_GL
 
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_targets.inc
@@ -84,7 +84,7 @@ distclean::
 
 #===============================================================================
 
-ABOVE_RNR_GL_LIBS += -L$(shell root-config --libdir) -lFTGL
+ABOVE_RNR_GL_LIBS += ${ROOT_LD_DIR} -lFTGL
 
 Rnr/GL/GLTextNS.o Rnr/GL/Text_GL_Rnr.o Rnr/GL/WGlFrameStyle_GL_Rnr.o \
 Rnr/GL/ZRlFont_GL_Rnr.o : CPPFLAGS += $(shell freetype-config --cflags)
