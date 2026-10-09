@@ -61,10 +61,14 @@ CPPFLAGS += ${DEFINES} ${LOCALINCL} ${ROOT_CPP_DIR} \
 CXXFLAGS += ${ROOT_CFLAGS} -Wall -fPIC -pipe ${USER_CXX_FLAGS}
 LDFLAGS	 += ${ROOT_LDFLAGS} ${USER_LD_FLAGS}
 
+# The libsets below are needed even when no symbol is used: loading a libset
+# loads them. Other libraries are linked only when used.
 ifeq (${GLED_SYSTEM},Linux)
   LDFLAGS_LIBSETS := -Wl,--no-as-needed
+  LDFLAGS_ASNEEDED := -Wl,--as-needed
 else
   LDFLAGS_LIBSETS :=
+  LDFLAGS_ASNEEDED :=
 endif
 
 # Dictionaries must be compiled without optimization, debug not needed.

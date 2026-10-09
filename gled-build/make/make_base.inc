@@ -109,12 +109,20 @@ VIEW_LIB_OBJS	= ${VIEW_OBJS} ${VIEW_FL_OBJS} ${VIEW_AUTO_OBJS}
 ${BASE_LIB_NAME}: ${BASE_LIB_OBJS}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDSHAREDOPT} ${LDFLAGS} ${BASE_LIB_OBJS} -o $@ ${BASE_LD_LIBS} \
-	  ${LDFLAGS_LIBSETS} -L${GLEDSYS}/lib ${ABOVE_BASE_LIBS}
+	  ${LDFLAGS_LIBSETS} -L${GLEDSYS}/lib ${ABOVE_BASE_LIBS} \
+	  ${LDFLAGS_ASNEEDED} ${ROOTLIBS}
 
-${VIEW_LIB_NAME}: ${VIEW_LIB_OBJS}
+${VIEW_LIB_NAME}: ${VIEW_LIB_OBJS} ${BASE_LIB_NAME}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDSHAREDOPT} ${LDFLAGS} ${VIEW_LIB_OBJS} -o $@ ${VIEW_LD_LIBS} \
-	  ${LDFLAGS_LIBSETS} -L${GLEDSYS}/lib ${ABOVE_BASE_LIBS} ${ABOVE_VIEW_LIBS}
+	  ${LDFLAGS_LIBSETS} -Llib -L${GLEDSYS}/lib ${ABOVE_BASE_LIBS} ${ABOVE_VIEW_LIBS} \
+	  ${LDFLAGS_ASNEEDED} -l${LIB_SET_NAME} ${GUILIBS} ${ROOTLIBS}
+
+# The renderer libraries also link the libset's own base and view libraries.
+RNR_OWN_LIBS = -l${LIB_SET_NAME} $(if ${SKIP_VIEW_LIBS},,-l${LIB_SET_NAME}_View)
+ifndef SKIP_RNR_LIBS
+${RNR_LIBS}: ${BASE_LIB_NAME} $(if ${SKIP_VIEW_LIBS},,${VIEW_LIB_NAME})
+endif
 
 ##########################################################################
 # Targets

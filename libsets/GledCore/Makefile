@@ -54,13 +54,16 @@ endif
 bin/saturn: saturn.o ${BASE_LIB_NAME}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDFLAGS} saturn.o -o $@ \
-	  -Llib -l${LIB_SET_NAME} ${ROOTLIBS} ${SYSLIBS}
+	  -Llib -l${LIB_SET_NAME} ${LDFLAGS_ASNEEDED} ${ROOTLIBS} ${SYSLIBS}
 
+# TApplication loads libGui for the X11 graphics anyway; linked here, it loads
+# faster than later through cling.
 bin/gled: gled.o ${BASE_LIB_NAME} ${VIEW_LIB_NAME}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDFLAGS} gled.o -o $@ \
 	  -Llib -l${LIB_SET_NAME} -l${LIB_SET_NAME}_View \
-	  ${ROOTLIBS} ${SYSLIBS} ${GUILIBS} ${ROOTGLIBS}
+	  ${ROOT_LD_DIR} -lGui \
+	  ${LDFLAGS_ASNEEDED} ${ROOTLIBS} ${SYSLIBS} ${GUILIBS} ${ROOTGLIBS}
 # On 10.7, this creates folder gled.app; and it seems broken.
 # ifeq (${GLED_SYSTEM},Darwin)
 #	${FLTK_CONFIG} --post $@
@@ -70,7 +73,8 @@ bin/gled: gled.o ${BASE_LIB_NAME} ${VIEW_LIB_NAME}
 ${PUPILS_LIB}: ${PUPILS_OBJS} lib/libGledCore_Rnr_GL.${LDEXT}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDSHAREDOPT} ${LDFLAGS} ${PUPILS_OBJS} -o $@ \
-	  ${ROOT_LD_DIR} ${FLTKLIBS} ${GLLIBS} -Llib -l${LIB_SET_NAME}_Rnr_GL
+	  ${ROOT_LD_DIR} ${FLTKLIBS} ${GLLIBS} -Llib -l${LIB_SET_NAME}_Rnr_GL \
+	  ${LDFLAGS_ASNEEDED} ${RNR_OWN_LIBS} ${ROOTLIBS}
 
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_targets.inc

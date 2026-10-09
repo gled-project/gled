@@ -13,6 +13,9 @@
 
 using namespace Opcode;
 
+namespace Opcode
+{
+
 void SRand(udword seed)
 {
   srand(seed);
@@ -33,3 +36,4 @@ udword GetRandomIndex(udword max_index)
   return Index % max_index;
 }
 
+}
