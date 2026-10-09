@@ -29,6 +29,10 @@
 #include <TMath.h>
 
 #include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <string>
+#include <vector>
 
 using namespace gled;
 
@@ -202,6 +206,45 @@ bool GledNS::IsLoaded(const TString& lib_set)
 bool GledNS::IsLoaded(LID_t lid)
 {
   return (Lid2LSInfo.find(lid) != Lid2LSInfo.end());
+}
+
+//------------------------------------------------------------------------------
+
+namespace
+{
+  // Used from static initialisers of other libraries.
+  std::atomic<bool> s_pending_libsets(false);
+
+  std::mutex& pending_mutex() { static std::mutex m; return m; }
+  std::vector<std::string>& pending_libsets() { static std::vector<std::string> v; return v; }
+  std::recursive_mutex& drain_mutex() { static std::recursive_mutex m; return m; }
+}
+
+void GledNS::PushPendingLibSet(const char* lib_set)
+{
+  std::lock_guard<std::mutex> lck(pending_mutex());
+  pending_libsets().push_back(lib_set);
+  s_pending_libsets.store(true, std::memory_order_release);
+}
+
+void GledNS::DrainPendingLibSets()
+{
+  if ( ! s_pending_libsets.load(std::memory_order_acquire) || Gled::theOne == 0)
+    return;
+
+  // Recursive: loading a libset can run code that checks in lenses.
+  std::lock_guard<std::recursive_mutex> drain_lck(drain_mutex());
+  std::vector<std::string> pending;
+  {
+    std::lock_guard<std::mutex> lck(pending_mutex());
+    pending.swap(pending_libsets());
+    s_pending_libsets.store(false, std::memory_order_relaxed);
+  }
+  for (const std::string& ls : pending)
+  {
+    if ( ! IsLoaded(ls.c_str()))
+      Gled::theOne->LoadLibSet(ls.c_str());
+  }
 }
 
 //------------------------------------------------------------------------------

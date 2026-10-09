@@ -355,6 +355,9 @@ ID_t ZQueen::CheckIn(ZGlass* lens)
 {
   static const Exc_t _eh("ZQueen::CheckIn ");
 
+  // Libsets loaded without AssertLibSet, e.g. through a rootmap.
+  GledNS::DrainPendingLibSets();
+
   GLensWriteHolder _wrlck(this);
   if(mKing->GetLightType() != ZKing::LT_Moon) {
     if( ! has_free_ids(1) ) {

@@ -151,6 +151,18 @@ for $c (@{ $CATALOG->{ClassList} }) {
 }
 print C "}\n\n";
 print C "void *${libname}_GLED_init = (void*)lib${libname}_GLED_init;\n";
+# GledCore is set up by Gled::InitGledCore.
+print C <<"fnord" unless $libname eq "GledCore";
+
+namespace
+{
+  struct ${libname}_Announcer
+  {
+    ${libname}_Announcer() { GledNS::PushPendingLibSet("$libname"); }
+  };
+  ${libname}_Announcer s_announcer;
+}
+fnord
 close C;
 
 

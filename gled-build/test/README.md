@@ -69,6 +69,18 @@ resolve. All six should say `yes yes yes`:
 gled --run --rnr GL --noprompt $GLEDSYS/test/regress/deptest.C
 ```
 
+**`noassert.C`** checks in a Geom1 and a Var1 lens without `AssertLibSet`
+and spawns an Eye. The rootmaps load the libraries; `ZQueen::CheckIn` must
+set up the libsets. The six libsets should say `yes yes yes` (`yes no no`
+under `saturn`, which loads no View or renderer libraries), and `gled` must
+keep running until the timeout:
+
+```sh
+cd $GLEDSYS/demos/GledCore
+timeout 22 gled --rnr GL --noprompt $GLEDSYS/test/regress/noassert.C
+timeout 22 saturn --noprompt $GLEDSYS/test/regress/noassert.C < /dev/null
+```
+
 ## demos/
 
 ```sh

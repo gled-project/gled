@@ -370,6 +370,11 @@ namespace GledNS
   bool	IsLoaded(const TString& lib_set);
   bool	IsLoaded(LID_t lid);
 
+  // The glue of a libset queues it when its library is loaded, by any path;
+  // ZQueen::CheckIn() drains the queue through Gled::LoadLibSet().
+  void  PushPendingLibSet(const char* lib_set);
+  void  DrainPendingLibSets();
+
   void  ShutdownLibSet(const TString& lib_set);
   void  ShutdownLibSets();
 
