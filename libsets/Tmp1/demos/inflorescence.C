@@ -4,9 +4,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libTmp1.so")
-
 using namespace gled;
 
 const Text_t* bush_layout = "ZGlass(Name,Title[22])";

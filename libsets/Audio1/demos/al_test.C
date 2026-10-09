@@ -8,9 +8,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libAudio1.so")
-
 using namespace gled;
 
 // *** main ***

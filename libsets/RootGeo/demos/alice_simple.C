@@ -7,9 +7,6 @@
 
 #include "sun_demos.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libRootGeo.so")
-
 using namespace gled;
 
 Scene* alice_simple_init(const Text_t* geom_file, const Text_t* det_file);

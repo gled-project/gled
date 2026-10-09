@@ -13,9 +13,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libNumerica.so")
-#pragma cling load("libGeom1.so")
-
 using namespace gled;
 
 void moonraker()

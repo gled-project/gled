@@ -4,8 +4,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libTmp1.so")
-
 using namespace gled;
 
 GTSIsoMaker       *g_isomaker = 0;

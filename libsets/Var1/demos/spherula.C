@@ -9,8 +9,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libVar1.so")
-
 using namespace gled;
 
 GTSurf            *gtsurf      = 0;

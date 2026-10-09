@@ -3,8 +3,6 @@
 #include "sun.C"
 #include "eye.C"
 
-#pragma cling load("libNet1.so")
-
 using namespace gled;
 
 Ip4AddressLocator *c_iploc = 0;

@@ -6,9 +6,6 @@
 #include "gled_view_globals.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libRootGeo.so")
-
 using namespace gled;
 
 const Text_t* default_nest_layout = 0;

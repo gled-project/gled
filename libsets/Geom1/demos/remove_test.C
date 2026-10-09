@@ -12,8 +12,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-
 using namespace gled;
 
 void remove_test(Int_t NSN = 32)

@@ -8,9 +8,6 @@
 
 #include "sun_demos.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libRootGeo.so")
-
 using namespace gled;
 
 void import_by_regexp(ZGeoNode* volt);

@@ -10,9 +10,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libTmp1.so")
-
 using namespace gled;
 
 void AddRule(ZNode* cons, ZVector* holder, const char* name, const char* title);

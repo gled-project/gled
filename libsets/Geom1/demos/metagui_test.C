@@ -12,8 +12,6 @@
 
 #include "demo_scene_elements.C"
 
-#pragma cling load("libGeom1.so")
-
 using namespace gled;
 
 GuiPupilInfo* guipupil = 0;

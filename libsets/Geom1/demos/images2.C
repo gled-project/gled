@@ -12,8 +12,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-
 using namespace gled;
 
 void images2()

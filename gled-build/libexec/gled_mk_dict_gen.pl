@@ -24,6 +24,10 @@
 #   in the directory of the library, with symlinks resolved.
 # - dict/<libsetname>_Dict.cc, by rootcling, and lib/<libsetname>.pcm, the
 #   module, which also holds the streamer info (no _rdict.pcm).
+# - lib/lib<libsetname>.rootmap, by rootcling: the classes of the dictionary
+#   and their library. TCling reads the rootmaps in the library path at
+#   startup and loads the library, and with it the module, when a macro
+#   names one of the classes, so macros need no #pragma cling load.
 #
 # rootcling writes the module into the directory of the library given with
 # -s and finds the modules it imports there. That is $GLEDSYS/lib, where the
@@ -195,6 +199,7 @@ for my $d (@{$specs->{$libset}{Deps}})
 
 my $exe = "$ENV{ROOTSYS}/bin/rootcling -f $dict/${libset}_Dict.cc " .
           "-s $ENV{GLEDSYS}/lib/lib${libset}.so -cxxmodule -writeEmptyRootPCM${deps} " .
+          "-rmf lib/lib${libset}.rootmap -rml lib${libset}.so " .
           "-I. $ENV{CPPFLAGS} -I$ENV{ROOTSYS}/include " .
           join(" ", @hdrs) . " $dict/${libset}_LinkDef.h";
 print $exe."\n";

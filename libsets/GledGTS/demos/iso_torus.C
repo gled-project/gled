@@ -9,9 +9,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libGeom1.so")
-#pragma cling load("libGledGTS.so")
-
 using namespace gled;
 
 GTSTorus          *g_torus = 0;

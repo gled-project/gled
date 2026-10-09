@@ -8,8 +8,6 @@
 #include "sun_demos.C"
 #include "eye.C"
 
-#pragma cling load("libNumerica.so")
-
 using namespace gled;
 
 void spheror()
