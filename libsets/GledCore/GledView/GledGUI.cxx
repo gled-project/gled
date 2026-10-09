@@ -401,10 +401,8 @@ void GledGUI::SetDebugLevel(Int_t d)
 
 void GledGUI::MessageLoop()
 {
-  // bGuiUp and the queue are only checked with mMsgCond locked, and Wait() is
-  // entered only when there is nothing to do.  Run() clears bGuiUp, signals
-  // and joins this thread; a check outside the lock could miss that signal
-  // and wait forever.
+  // Check bGuiUp and the queue only under mMsgCond: Run() clears bGuiUp and
+  // signals, and an unlocked check could miss that and wait forever.
 
   mMsgCond.Lock();
   while (bGuiUp)

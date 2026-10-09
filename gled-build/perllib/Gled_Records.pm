@@ -4,19 +4,8 @@
 
 package Gled_Records;
 
-# Reader for record files such as the libset manifests:
-#
-#   struct glass { name, class_id, stem, %opts }   # declares field names
-#   glass(ZImage, 1, Glasses/ZImage, rnr=ZImage)   # one record
-#
-# Values: words and paths, "quoted strings" (\" and \\ escapes), [lists],
-# {key=value, ...} hashes, and records. A trailing '@field' in a struct takes
-# the remaining positional values, a trailing '%field' the key=value ones.
-# '#' starts a comment.
-#
-# read_file(<file>) returns a list of hash-refs, one per top-level record,
-# each with the struct's fields and '_type' set to the struct name. Errors
-# croak with the file name.
+# Reads record files such as the libset manifests. read_file(<file>) returns
+# one hash-ref per top-level record, with '_type' set to its struct name.
 
 use Carp;
 

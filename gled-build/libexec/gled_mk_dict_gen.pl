@@ -4,35 +4,8 @@
 # This file is part of Gled.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-# Generates the ROOT dictionary of a libset, built as a C++ module, with a
-# single rootcling run.
-#
-# Usage: gled_mk_dict_gen.pl <libsetname> <headers ...>
-#
-# Run in the libset directory. Writes:
-# - dict/<libsetname>_LinkDef.h, the selection rules. For each directory of
-#   the headers, every glass in glass.list that lives there gets
-#   'class gled::<Glass>+' and 'class gled::ZLink<gled::<Glass>>'; the first
-#   one is skipped when <dir>/LinkDef.h names the glass itself, e.g. as
-#   'gled::AList-'. <dir>/LinkDef.h, if it exists, is copied in verbatim. It
-#   lists all the other classes, namespaces, typedefs, functions and globals.
-# - module.modulemap, the module <libsetname>: one submodule per header of
-#   the libset that the dictionary headers include, directly or not, and the
-#   .h7 files they include as textual headers. Other libsets that include
-#   these headers import the module instead of parsing them again.
-# - lib/module.modulemap, which refers to the one above. TCling looks for it
-#   in the directory of the library, with symlinks resolved.
-# - dict/<libsetname>_Dict.cc, by rootcling, and lib/<libsetname>.pcm, the
-#   module, which also holds the streamer info (no _rdict.pcm).
-# - lib/lib<libsetname>.rootmap, by rootcling: the classes of the dictionary
-#   and their library. TCling reads the rootmaps in the library path at
-#   startup and loads the library, and with it the module, when a macro
-#   names one of the classes, so macros need no #pragma cling load.
-#
-# rootcling writes the module into the directory of the library given with
-# -s and finds the modules it imports there. That is $GLEDSYS/lib, where the
-# modules of the libsets this one depends on are linked; the new module is
-# moved to lib/ and linked back by post_build_install.
+# Generates the dictionary of a libset as a C++ module, with one rootcling run.
+# Usage, in the libset directory: gled_mk_dict_gen.pl <libsetname> <headers ...>
 
 use lib "$ENV{GLEDSYS}/perllib";
 use Carp;
@@ -120,15 +93,8 @@ close FOO;
 # Module map
 #-------------------------------------------------------------------------------
 
-# Follows the #include lines of the libset's own headers. An include is
-# resolved against the libset directory first ("Gled/GTime.h") and then
-# against the directory of the including file ("GTime.h7"); includes that
-# resolve to neither belong to other libsets, ROOT or the system.
-# A header included inside braces, as the .h7 files are included in class
-# bodies and Var1's Opcode.h includes Ice/*.h in namespace Opcode, is pasted
-# into that scope and cannot be a module of its own: it is textual, and so is
-# everything it includes. The braces are counted outside comments and
-# literals, ignoring the preprocessor conditionals.
+# A header included inside braces (.h7 files, Var1's Ice/*.h) is textual, and
+# so is everything it includes.
 my (%seen, %textual);
 my @todo = map { [ $_, 0 ] } @hdrs;
 while (my $x = shift @todo)

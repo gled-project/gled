@@ -1,7 +1,5 @@
-// Eden: a RectTerrain filled from a ROOT histogram by RectTerrain::Edenify(),
-// a garden on a mount in a plain with four rivers flowing out of it, colored
-// with the gradient terrain.pov. Edenify() also draws the histogram into the
-// canvas "Eden". The Edenify button in the terrain's GUI does it again.
+// Eden: a RectTerrain from the histogram of RectTerrain::Edenify(), colored
+// with terrain.pov. The Edenify button in the terrain's GUI does it again.
 //
 // vars: ZQueen* g_queen
 // libs: Geom1

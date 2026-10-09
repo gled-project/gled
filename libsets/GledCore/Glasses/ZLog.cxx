@@ -20,9 +20,8 @@ using namespace gled;
 //
 // Logs into given file, supports file rotation.
 //
-// The calling threads format the lines and put them into a queue. A dedicated
-// thread writes them out, flushing after each batch, and checks for log
-// rotation: every 10 seconds, and when RotateLog() asks for it.
+// A dedicated thread writes the queued lines and checks for rotation every
+// 10 s and on RotateLog().
 //
 // Things I though, at some point, are relevant:
 // - GUI (yes, right) -- to replace "main logger".

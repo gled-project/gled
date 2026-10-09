@@ -1,9 +1,4 @@
-// Ctrl-C during a start-up macro under the TRint prompt.  The macro pumps
-// gSystem->ProcessEvents() for 20 s.  Run gled with its prompt on a
-// pseudo-terminal and type Ctrl-C while "loop start" is the last line;
-// TRint should break out of the macro ("loop end" never printed) and give
-// the prompt.
-//
+// Ctrl-C during a start-up macro under the prompt; TRint must break out of it.
 //   ctrlc_pty.py out.txt 'loop start' --logflush startup_loop.C
 
 #include <Gled/GledNS.h>

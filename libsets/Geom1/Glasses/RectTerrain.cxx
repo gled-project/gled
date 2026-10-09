@@ -275,17 +275,8 @@ void RectTerrain::ReTring()
 
 void RectTerrain::Edenify()
 {
-  // Demonstrates SetFromHisto() and Smooth(): fills a TH2F with a garden on
-  // a mount in a plain, with four rivers flowing out of it, draws the
-  // histogram and takes the terrain from it. Set Ribbon to terrain.pov for
-  // the colors.
-  //
-  // Edenify() runs in a detached thread and takes the lock only to set the
-  // terrain. The ROOT thread draws the histogram into the canvas "Eden",
-  // through a cross-thread request that Edenify() does not wait for. The
-  // canvas shows the histogram rebinned to 64 x 64, as SURF1. LEGO2 took
-  // 3.5 s to paint it, because of the negative bins, and the canvas repaints
-  // on every resize. Clearing the canvas deletes the previous histogram.
+  // Demo of SetFromHisto() and Smooth(). Runs detached and locks only to set
+  // the terrain; the canvas is drawn by a request it does not wait for.
 
   TH2F* h = new TH2F("Eden", "GardenOfEdenify", 128, -5, 5, 128, -5, 5);
   h->SetDirectory(0);

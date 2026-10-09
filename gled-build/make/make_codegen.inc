@@ -1,11 +1,7 @@
 ##########################################################################
 #
-# Make-include file with the rules for code generated from the headers:
-# project7 output (.h7, .c7 and the glass views), the libset glue and the
-# make rules for the ROOT dictionaries.
-#
-# Included at the top of make_targets.inc, when all the header lists of
-# the libset are complete.
+# Rules for the code generated from the headers: project7, the glue and the
+# dictionary make rules. Included by make_targets.inc.
 #
 ##########################################################################
 

@@ -155,15 +155,8 @@ sub reap_stale_symlinks
 {
   my ($dest_dir, $source_dir) = @_;
 
-  # Remove symlinks in $dest_dir that point into $source_dir but whose target
-  # no longer exists.  'ln -sf' never cleans up after a file stops being
-  # produced, and the uninstall functions derive their file list from the
-  # source directory, so neither of them can notice a leftover.
-  #
-  # Only links pointing into *this* $source_dir are considered: destination
-  # directories like ${GLEDSYS}/lib are shared by every libset, and the links
-  # belonging to the others must not be touched.  Copies (rsync mode) carry no
-  # provenance and are left alone -- only symlinks can be attributed.
+  # Removes dangling symlinks in $dest_dir that point into $source_dir; the
+  # links of other libsets in the shared directory are left alone.
 
   return unless -d $dest_dir;
 

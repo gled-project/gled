@@ -1,8 +1,4 @@
-// Selection rules for the GledCore_Gled dictionary.
-//
-// gled_mk_dict_gen.pl copies this file into dict/GledCore_Gled_LinkDef.h.
-//
-// Linking of nested classes and nested typedefs is enabled for all classes.
+// gled_mk_dict_gen.pl merges these rules into dict/GledCore_LinkDef.h.
 
 #pragma link C++ class gled::GCondition+;
 #pragma link C++ class gled::GKeyRSA+;

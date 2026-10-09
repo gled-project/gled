@@ -1,13 +1,7 @@
 #!/usr/bin/perl
-# Summarise what a set of rootcling dictionary sources selects, one line per
-# item, sorted, so that two builds can be diffed:
-#   class     <name> ver=<version expr> <instance.Set* calls>
-#   alt       AddClassAlternate(...) calls
-#   hdrname   names in classesHeaders[] (classes, typedefs, functions, globals);
-#             empty for dictionaries built as C++ modules
-#   namespace namespaces with a GenerateInitInstance()
-#
-# Usage: dictsig.pl <gled-build>/libsets/*/dict/*.cc > x.sig
+# Prints what rootcling dictionary sources select, sorted, for diffing two
+# builds; see test/README.md.
+#   dictsig.pl <libset dirs>/dict/*_Dict.cc > x.sig
 
 use strict;
 use warnings;

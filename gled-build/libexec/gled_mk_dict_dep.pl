@@ -7,16 +7,8 @@
 use lib "$ENV{GLEDSYS}/perllib";
 use Gled_ConfCat_Parser;
 
-# Make-Dict-depend
-##################
-# Input: libset name, then the header files that are to be rootcling-ed
-# Output: make dependencies for generation of the dictionary,
-#         usually stored in make_dict.inc
-#
-# A libset has one dictionary, <libset>_Dict, built as the C++ module
-# <libset> from all the headers. Each directory of the headers must hold
-# glasses or a LinkDef.h. The same name is used in make_base.inc for
-# DICT_AUTO_BASE.
+# Writes the make rules of a libset's dictionary (make_dict.inc).
+# Usage: gled_mk_dict_dep.pl <libsetname> <headers ...>
 
 # read build config
 Gled_ConfCat_Parser::import_build_config();

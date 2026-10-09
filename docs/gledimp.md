@@ -860,9 +860,15 @@ Stone members can have their specialized widgets. As an example see
 
 Header files are also parsed by `rootcling`, `ROOT`'s dictionary and
 I/O method (`Streamer`) generator. The build runs it once per
-libset and builds the dictionary as a C++ module: all glasses get a
-dictionary entry automatically, and the other classes of a directory
+libset and builds the dictionary as a C++ module. The rules for the
+glasses are generated from `glass.list`; other classes of a directory
 are listed in its `LinkDef.h` file (for example `Stones/LinkDef.h`).
+
+A glass with its own `Streamer()`, like `AList`, is also listed in
+the `LinkDef.h` of its directory, with a `-`; this replaces the
+generated rule, so that `rootcling` does not write a streamer:
+
+    #pragma link C++ class gled::AList-;
 
 By adding an `!` on the first character of the comment directly
 following the data member declaration, this member will not be stored/retrieved to/from the stream. Example

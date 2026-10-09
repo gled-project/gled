@@ -1,14 +1,7 @@
 #!/bin/bash
-# Send a signal to gled once a macro has reached a given point, and time the
-# exit.
-#
+# Sends a signal to gled once a macro's output shows <pattern> and times the
+# exit; see test/README.md.
 #   [SIG=INT] sigtest.sh <out> <pattern> <macro> [gled options...]
-#
-# Runs 'gled --run --noprompt --logflush <options> <macro>' from this
-# directory with its output in <out>, waits until <pattern> appears there,
-# sends SIG (default TERM) a second later and reports when gled exits.  Gled
-# is killed if it is still running 120 s after the signal.  Needs the gled
-# environment (build_env.sh) and DISPLAY (an off-screen X server is best).
 
 out=$(realpath -m "$1"); pat=$2; shift 2
 cd "$(dirname "$0")" || exit 1

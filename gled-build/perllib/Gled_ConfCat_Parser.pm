@@ -23,13 +23,8 @@ sub import_build_config {
 }
 
 sub parse_catalog {
-  # Reads the glass list of a libset into the global $CATALOG:
-  #   LibSetName, LibID, ClassList (in glass.list order), ClassID2Name and
-  #   Classes{<Glass>} with ClassID, Stem and RnrClass.
-  # Expects cwd to be the libset directory; the optional argument is the
-  # path of the libset directory relative to cwd.
-  # The libset name is the name of its directory. The libset ID comes from
-  # build_config, where configure puts LIB_SET_ID of the libset Makefile.
+  # Reads glass.list of the libset in cwd, or in the directory given relative
+  # to it, into $CATALOG. The libset is named after its directory.
   my $dir  = shift;
   my $name = basename(defined $dir ? $dir : getcwd());
   my $list = (defined $dir ? "$dir/" : "") . $main::config->{GLASS_LIST};

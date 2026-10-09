@@ -4,16 +4,8 @@
 # This file is part of Gled.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-# Writes the manifest of a libset to stdout: what a build of other libsets
-# needs to know about this one without running its Makefile. Run from the
-# libset directory with the libsets it requires as arguments (the
-# REQUIRES_LIB_SETS of its Makefile); the rest comes from build_config and
-# glass.list. The directory of the libset is the one configure recorded.
-#
-# The manifest is a list of records. The struct lines name the fields; a
-# trailing '@field' takes the remaining positional values, a trailing
-# '%field' the 'key=value' ones. A glass with its own renderer gets
-# 'rnr=<renderer class>'; without it, it uses the renderer of its parent.
+# Writes the manifest of a libset to stdout, for builds against this area.
+# Usage, in the libset directory: gled_manifest_writer.pl <required libsets>
 
 use lib "$ENV{GLEDSYS}/perllib";
 use Gled_ConfCat_Parser;

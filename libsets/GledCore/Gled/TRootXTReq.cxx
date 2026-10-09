@@ -54,10 +54,8 @@ void TRootXTReq::post_request()
 
 bool TRootXTReq::act_here()
 {
-  // True when a request should be executed directly instead of queued: in
-  // the RootApp thread itself, where waiting for the queue would deadlock,
-  // and before Bootstrap(), when only the start-up macros run, in the RootApp
-  // thread, and the queue does not exist yet.
+  // Execute directly in the RootApp thread, where waiting would deadlock, and
+  // before Bootstrap(), when there is no queue yet.
 
   return sRootThread == 0 || GThread::Self() == sRootThread;
 }

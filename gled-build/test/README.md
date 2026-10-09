@@ -101,7 +101,9 @@ processes on localhost — a sun with moons, and moons of moons — drives them
 through phases with `cluster_node.C` (build, mirror, modify, dump), and checks
 that every queen ruled on several Saturns has the same structure, content and
 IDs on all of them, and that every modification arrived. Exit status 0 means
-PASS.
+PASS. Each Saturn gets its role and run directory from `CLUSTER_ROLE` and
+`CLUSTER_RUNDIR`; the script starts a phase by writing `go.<phase>` there,
+and each Saturn answers with `done.<role>.<phase>` or `fail.<role>.<phase>`.
 
 ```sh
 cluster/run_cluster.py --rundir <scratch dir>/basic                 # ~40 s

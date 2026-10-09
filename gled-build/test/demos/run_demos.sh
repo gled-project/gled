@@ -1,19 +1,6 @@
 #!/bin/bash
-# Run GUI demos and check how they ran and how they shut down.
-#
+# Runs GUI demos and checks how they ran and shut down; see test/README.md.
 #   run_demos.sh <outdir> [<LibSet>/<macro>.C ...]
-#
-# Without a list, runs the base demos below.  A macro that does not exist
-# fails.  Each one runs as
-# 'timeout 22 gled --noprompt <macro>' in $DEMOS_DIR/<LibSet>, with its output
-# in <outdir>/<LibSet>-<macro>.log.  DEMOS_DIR defaults to $GLEDSYS/demos.
-# A demo passes when
-#   - the exit status is 124: it ran until timeout's SIGTERM and then exited;
-#   - the log has no crash, heap-corruption or cling error lines (timeout
-#     still returns 124 when gled aborts while shutting down);
-#   - the GUI message loop exited exactly once.
-# Needs the gled environment (build_env.sh) and DISPLAY; demos open windows,
-# so an off-screen X server (Xvnc) is best.  Exit status: number of failures.
 
 BASE_DEMOS="Geom1/eden.C Geom1/gl_tests.C Geom1/images2.C Geom1/images.C Geom1/metagui_test.C
   Geom1/remove_test.C Geom1/rot_lamps.C Geom1/spheres.C Geom1/WS_demo.C

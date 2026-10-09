@@ -154,11 +154,7 @@ sub deduce_libset_list
 
 ########################################################################
 
-# A libset is either local, where its Makefile is asked, or in one of the
-# GLEDBASE areas, which are built gled trees. A libset in an area is known by
-# its manifest, <area>/lib/<libset>.manifest, written when the area was built;
-# the manifest also gives the directory of the libset. Nothing in the area is
-# run or linked into the build directory as a libset.
+# A libset is local, or known by its manifest in a GLEDBASE area.
 
 sub find_base_manifest
 {
@@ -790,12 +786,8 @@ BUILD_FILES    := Makefile.config $CFGFILE bin/gled-config \\
 
 FNORD
 
-  # 'all' builds the libsets in two steps, in the order of their
-  # dependencies: module-<LibSet> makes the dictionary and the C++ module,
-  # build-<LibSet> the libraries. A module needs only the modules of the
-  # libsets it requires, so with 'make -j' the modules of independent
-  # libsets are made in parallel and ahead of the compilation, which shares
-  # the same job slots. Other goals go to each libset in turn.
+  # 'all' follows the libset dependencies: module-<X> needs only the modules
+  # below, build-<X> also the builds below. Other goals go to each in turn.
   my @ls = @{$resolver->{LibSetList}};
   my %local = map { $_ => 1 } @ls;
   print M "all: " . join(' ', map { "build-$_" } @ls) . "\n\n";

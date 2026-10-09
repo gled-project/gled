@@ -2,11 +2,8 @@
 // This file is part of Gled.
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
-// Procedural bricks, fragment shader. The bricks are laid in object
-// coordinates in a running bond: rows along z, and the bricks of a row along
-// x, or along y on the faces that face x. On faces that face z the pattern
-// is laid in x and y. Each brick gets a slightly different shade. Lit by GL
-// light 0, the first lamp of the scene.
+// Procedural bricks in a running bond, in object coordinates, each with its
+// own shade; lit by GL light 0.
 
 #version 120
 

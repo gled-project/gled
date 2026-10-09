@@ -15,18 +15,8 @@ using namespace gled;
 
 //______________________________________________________________________________
 //
-// Reads a drawing tablet through the kernel's evdev interface and turns pen
-// strokes into TabletStrokes of the linked TabletStrokeList. The first pad
-// button starts a new stroke list, the second ends it.
-//
-// PenDevice and PadDevice are /dev/input/eventN paths; empty means: take the
-// first input device that reports a pen with pressure, and the device of the
-// same tablet (same vendor and product) that has buttons. With Grab, the
-// devices are grabbed while reading, so the desktop does not get the events.
-//
-// The devices are readable by root and the input group. The udev rule
-//   SUBSYSTEM=="input", ENV{ID_INPUT_TABLET}=="1", TAG+="uaccess"
-// gives the user logged in at the console access to tablets only.
+// Turns pen strokes from an evdev tablet into TabletStrokes. Devices and
+// permissions: docs/glasses.md.
 
 //==============================================================================
 

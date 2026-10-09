@@ -5,13 +5,8 @@
 //__________________________________________________________________________
 // GeoMesh
 //
-// Triangle mesh of a TGeoShape, built from the raw sections of its
-// TBuffer3D: the polygons, given there as lists of segments, are turned
-// into vertex loops, split into triangles with the GLU tessellator and
-// given one normal per triangle. The edge flags mark the triangle edges
-// that lie on the boundary of the original polygon, so that a wireframe
-// drawing shows the polygons and not their triangulation.
-//
+// Triangle mesh of a TGeoShape from its TBuffer3D, tessellated with GLU; the
+// edge flags keep the polygon outlines for wireframe drawing.
 // Adapted from REveGeoPolyShape and REveGluTess of ROOT's Eve7.
 
 #include "GeoMesh.h"

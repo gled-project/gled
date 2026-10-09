@@ -733,11 +733,8 @@ void Gled::ProcessCmdLineMacros()
     mRootApp = new TApplication("TApplication", &rargc, (char**) rargv);
   }
 
-  // ROOT >= 6.30 defaults TCanvas & co. to the web display, which spawns an
-  // http server and its civetweb threads.  Gled has its own GUI and does not
-  // want them: the civetweb threads are not GThreads, and any signal landing
-  // on one of them used to crash in GThread::TheSignalHandler.  Ask for the
-  // classic X11 canvas unless the user asks for a web display with --root-web.
+  // ROOT >= 6.30 defaults canvases to the web display, whose civetweb threads
+  // are not GThreads. Use X11 unless --root-web asks for it.
   gROOT->SetWebDisplay(mRootWebDisplay);
 
   gROOT->GetPluginManager()->LoadHandlersFromPluginDirs("TFile");
@@ -1495,15 +1492,8 @@ void* Gled::RootApp_runner_tl(void*)
   GThread::SetSignalHandler(GThread::SigSYS,   GThread::ToRootsSignalHandler, true);
   GThread::SetSignalHandler(GThread::SigWINCH, GThread::ToRootsSignalHandler, true);
 
-  // Keep SIGTERM -- and SIGINT, when it is ours and not TRint's -- pending
-  // until TApplication::Run() below.  Their handlers call ExitLoop().  A
-  // command-line macro that pumps gSystem->ProcessEvents() (TWebCanvas waiting
-  // to be painted, an animation loop) would run them now, and TSystem::Run()
-  // clears its done flag on entry, so the request would be lost.  Unblocked,
-  // the pending signal is delivered at once and the loop exits on its first
-  // pass.  This is a start-up issue only: once the loop runs, a signal handled
-  // in a macro's nested ProcessEvents() delays the exit until the macro
-  // returns.  Threads started from the macros inherit the blocked mask.
+  // SIGTERM, and SIGINT without a prompt, stay pending until Run() below: a
+  // macro pumping ProcessEvents() would run ExitLoop(), which Run() resets.
   GThread::BlockSignal(GThread::SigTERM);
   if ( ! Gled::theOne->GetHasPrompt())
   {

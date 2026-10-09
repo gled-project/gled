@@ -288,10 +288,8 @@ int GThread::Spawn()
   mRunningState = RS_Spawning;
   sContainerLock.Unlock();
 
-  // The new thread inherits the signal mask of the spawning thread. Start it
-  // with the mask of the main thread, all signals but the CPU exceptions
-  // blocked, whichever thread spawns it: the root-app thread, which runs
-  // the macros, has the system signals unblocked.
+  // Start with the main thread's mask, whichever thread spawns: the root-app
+  // thread has the system signals unblocked.
   sigset_t child_set, old_set;
   sigfillset(&child_set);
   sigdelset(&child_set, SIGILL);

@@ -1,8 +1,5 @@
-// Per-Saturn driver for the cluster test harness; run_cluster.py starts one
-// saturn per role with this macro. Role and run directory come from the
-// environment (CLUSTER_ROLE, CLUSTER_RUNDIR). Phases are synchronised through
-// marker files: the orchestrator writes go.<phase>, each node answers with
-// done.<role>.<phase> or fail.<role>.<phase>.
+// One Saturn of run_cluster.py: role and run directory from CLUSTER_ROLE and
+// CLUSTER_RUNDIR; phases go through go.<phase> and done/fail.<role>.<phase> files.
 
 #include <Gled/GledNS.h>
 #include "gled_globals.C"

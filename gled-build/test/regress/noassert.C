@@ -1,7 +1,4 @@
-// Checks in lenses of Geom1 and Var1 without calling AssertLibSet. The
-// rootmaps load the libraries when cling meets the class names; the check-in
-// must then set up the libsets, with their View and Rnr_GL parts, before the
-// Eye shows the lenses.
+// Checks in Geom1 and Var1 lenses without AssertLibSet; see test/README.md.
 #include <Gled/GledNS.h>
 
 #include "sun_demos.C"

@@ -21,6 +21,7 @@ GitHub.
 | `gled-build/` | the build area: `configure`, make fragments, code generators, tests; after a build also `bin/`, `lib/`, `macros/` and `demos/` with links into the libsets |
 | `libsets/<LibSet>/` | the sources, one directory per libset, each with its `demos/` |
 | `docs/gledimp.md` | *Gled for the impatient*: the concepts and the class directives that the code generators read |
+| `docs/glasses.md` | Notes on individual glasses: what their parameters do, device setup |
 
 The libsets are GledCore (the framework, the GUI and the GL renderer),
 Geom1 (geometry, images, terrains), Numerica, Audio1 (OpenAL sound), Net1,

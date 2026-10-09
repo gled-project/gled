@@ -67,10 +67,8 @@ BASE_OBJS +=	$(addsuffix .o,$(basename ${BASE_SRCS}))
 # ROOT Dictionary stuff
 DICT_SRCS +=	$(foreach dir,${DICT_DIRS},$(wildcard ${dir}/*.cxx))
 DICT_HDRS +=	$(DICT_SRCS:.cxx=.h)
-# One dictionary per libset, built as the C++ module <LibSet> from a single
-# rootcling run: dict/<LibSet>_Dict.cc, lib/<LibSet>.pcm and the module maps
-# module.modulemap and lib/module.modulemap. The module is remade when ROOT's
-# modules change (modules.idx) or a module it imports changes.
+# One dictionary per libset, the C++ module <LibSet>; remade also when ROOT's
+# modules or the modules it imports change.
 DICT_AUTO_BASE:=$(if ${DICT_HDRS},${DICT_DIR}/${LIB_SET_NAME}_Dict)
 DICT_AUTO_SRCS= $(addsuffix .cc,${DICT_AUTO_BASE})
 DICT_AUTO_OBJS=	$(addsuffix .o, ${DICT_AUTO_BASE})

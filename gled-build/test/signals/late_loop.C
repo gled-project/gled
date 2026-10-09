@@ -1,8 +1,4 @@
-// SIGTERM during a macro that runs after TApplication::Run() has started.
-// A timer runs pump() 3 s after start-up; it calls ProcessEvents() for
-// 10 s.  Send SIGTERM while "pump start" is the last line: gled should
-// exit right after "pump end", not before and not never.
-//
+// SIGTERM while a macro pumps events after Run(); gled must exit after "pump end".
 //   sigtest.sh out.txt 'pump start' late_loop.C
 
 #include <Gled/GledNS.h>

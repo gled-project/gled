@@ -1,11 +1,5 @@
-// What ROOT's TCanvas resolves to under gled: the web display setting, the
-// canvas implementation, gVirtualX and the batch flags.
-//
-//   gled --run --noprompt canv.C                   # TRootCanvas, 'off'
-//   gled --run --noprompt --root-web on canv.C     # TWebCanvas
-//
-// With --root-web server:<port> it is also the start-up case for sigtest.sh
-// (pattern 'canvas batch'): TWebCanvas then waits ~30 s for a browser.
+// Prints what TCanvas resolves to under gled (web display, implementation,
+// gVirtualX, batch); the start-up case of sigtest.sh with --root-web server:<port>.
 
 #include <Gled/GledNS.h>
 using namespace gled;
