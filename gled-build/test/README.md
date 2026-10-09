@@ -5,12 +5,13 @@ dictionaries can go stale silently, and the worst bug found so far passed the
 build and the class checksums while corrupting the heap. Run, in this order:
 
 1. `make` — clean.
-2. After a ROOT rebuild or upgrade, or a change to `gled_mk_dict_gen.pl`,
+2. After a change to `gled_mk_dict_gen.pl` or `gled_mk_dict_dep.pl`,
    regenerate the dictionaries (remove `libsets/*/dict/*`,
-   `libsets/*/lib/*_rdict.pcm`, `lib/*_rdict.pcm`) and rebuild. Make
-   regenerates a dictionary when a gled header it includes, a `LinkDef.h`
-   or `glass.list` changes, but it does not track ROOT headers or the
-   generator.
+   `libsets/*/make_dict.inc` and `libsets/*/lib/*.pcm`) and rebuild. Make
+   regenerates a libset's dictionary and C++ module when a gled header it
+   includes, a `LinkDef.h`, `glass.list`, ROOT's `modules.idx` or the
+   module of a libset it requires changes, but it does not track the
+   generators.
 3. `regress/` — dictionary selection and class checksums.
 4. `demos/run_demos.sh` — the demos, including how they shut down.
 5. `cluster/run_cluster.py` — when MIR routing, Saturn or queen code changed.
@@ -34,7 +35,8 @@ gled aborts while shutting down after the SIGTERM. Check the output too
 
 **`dictsig.pl`** prints, from the generated rootcling sources, every
 `TGenericClassInfo` (name, version expression, `Set*` calls), the
-`classesHeaders` names and the `AddClassAlternate` calls, sorted. Diff it
+`classesHeaders` names and the `AddClassAlternate` calls, sorted. The
+dictionaries are C++ modules, which leave `classesHeaders` empty. Diff it
 against the baseline to show that a change kept the dictionary selection:
 
 ```sh
@@ -42,7 +44,7 @@ perl regress/dictsig.pl $GLEDSYS/../libsets/{GledCore,Numerica,Audio1,Geom1,Gled
   | diff regress/dictsig.baseline -
 ```
 
-The baseline covers the six base libsets (829 lines, 2026-10-08).
+The baseline covers the six base libsets (426 lines, 2026-10-09).
 
 **`ckdump.C`** writes the class version and checksum of the 148 glasses of
 the six base libsets to `CKDUMP.txt` in the current directory:

@@ -463,6 +463,16 @@ $config->{SYSTEM} = $system;
 croak "Environment variable ROOTSYS must be set" unless defined $ENV{ROOTSYS};
 croak "Environment variable GLEDSYS must be set" unless defined $ENV{GLEDSYS};
 
+# The dictionaries are built as C++ modules, which needs a ROOT built with
+# runtime_cxxmodules.
+{
+  my $mods = `$ENV{ROOTSYS}/bin/root-config --has-runtime_cxxmodules`;
+  chomp $mods;
+  croak "ROOT in $ENV{ROOTSYS} is built without runtime_cxxmodules; " .
+        "gled builds its dictionaries as C++ modules and needs them"
+    unless $mods eq "yes";
+}
+
 if($config->{NORNRLIBS} or $config->{RENDERERS} eq "")
 {
   $config->{NORNRLIBS} = 1;

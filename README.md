@@ -28,7 +28,9 @@ GledGTS (GTS surfaces), Var1, RootGeo (ROOT geometries) and Tmp1.
 
 ## Building
 
-Gled needs ROOT 6, FLTK 1.3 with thread and OpenGL support, GLEW, GLU,
+Gled needs ROOT 6 built with C++ modules (`runtime_cxxmodules`, the default
+on Linux; distribution packages may turn it off), FLTK 1.3 with thread and
+OpenGL support, GLEW, GLU,
 DevIL, freetype and GSL. GledGTS needs GTS, and Audio1 needs OpenAL,
 freealut and libvorbis. FTGL is part of GledCore. The RSA authentication
 code still uses the OpenSSL 1.x API, so configure with `--nossl` on current

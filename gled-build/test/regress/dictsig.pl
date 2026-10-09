@@ -3,7 +3,8 @@
 # item, sorted, so that two builds can be diffed:
 #   class     <name> ver=<version expr> <instance.Set* calls>
 #   alt       AddClassAlternate(...) calls
-#   hdrname   names in classesHeaders[] (classes, typedefs, functions, globals)
+#   hdrname   names in classesHeaders[] (classes, typedefs, functions, globals);
+#             empty for dictionaries built as C++ modules
 #   namespace namespaces with a GenerateInitInstance()
 #
 # Usage: dictsig.pl <gled-build>/libsets/*/dict/*.cc > x.sig

@@ -142,8 +142,8 @@ distclean::
 	${MAKE} clean
 	${MUTE} rm -rf ${DICT_DIR} ${VIEW_DIR} ${GLUE_DIR}
 	${MUTE} rm -rf ${VIEW_FL_SECS} ${BLESSED_H7} ${BLESSED_C7}
-	${MUTE} rm -rf lib/gled_lid_${LIB_SET_ID} lib/lib* lib/*_rdict.pcm \
-		${MANIFEST} make_dict.inc
+	${MUTE} rm -rf lib/gled_lid_${LIB_SET_ID} lib/lib* lib/*.pcm \
+		lib/module.modulemap module.modulemap ${MANIFEST} make_dict.inc
 #	some .h7, .c7 may still be lurking around ... ditch them
 	${MUTE} find . -name '*.h7' -or -name '*.c7' | xargs rm -f
 

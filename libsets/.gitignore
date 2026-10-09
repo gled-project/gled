@@ -5,6 +5,7 @@
 *.c7
 .depend_done
 /*/make_dict.inc
+/*/module.modulemap
 /*/Views/
 /*/dict/
 /*/glue/

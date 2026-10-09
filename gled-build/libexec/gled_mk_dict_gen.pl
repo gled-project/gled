@@ -4,20 +4,31 @@
 # This file is part of Gled.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-# Generates the ROOT dictionary of one directory of a libset with a single
-# rootcling run.
+# Generates the ROOT dictionary of a libset, built as a C++ module, with a
+# single rootcling run.
 #
-# Usage: gled_mk_dict_gen.pl <libsetname> <dir> <headers ...>
+# Usage: gled_mk_dict_gen.pl <libsetname> <headers ...>
 #
-# Writes dict/<libsetname>_<dir>_LinkDef.h and runs rootcling over the
-# headers, producing dict/<libsetname>_<dir>_Dict.cc and
-# dict/<libsetname>_<dir>_Dict_rdict.pcm. The selection rules come from two
-# places:
-# - Every glass in glass.list that lives in <dir> gets 'class gled::<Glass>+'
-#   and 'class gled::ZLink<gled::<Glass>>'. The first one is skipped when
-#   <dir>/LinkDef.h names the glass itself, e.g. as 'gled::AList-'.
-# - <dir>/LinkDef.h, if it exists, is copied in verbatim. It lists all the
-#   other classes, namespaces, typedefs, functions and globals.
+# Run in the libset directory. Writes:
+# - dict/<libsetname>_LinkDef.h, the selection rules. For each directory of
+#   the headers, every glass in glass.list that lives there gets
+#   'class gled::<Glass>+' and 'class gled::ZLink<gled::<Glass>>'; the first
+#   one is skipped when <dir>/LinkDef.h names the glass itself, e.g. as
+#   'gled::AList-'. <dir>/LinkDef.h, if it exists, is copied in verbatim. It
+#   lists all the other classes, namespaces, typedefs, functions and globals.
+# - module.modulemap, the module <libsetname>: one submodule per header of
+#   the libset that the dictionary headers include, directly or not, and the
+#   .h7 files they include as textual headers. Other libsets that include
+#   these headers import the module instead of parsing them again.
+# - lib/module.modulemap, which refers to the one above. TCling looks for it
+#   in the directory of the library, with symlinks resolved.
+# - dict/<libsetname>_Dict.cc, by rootcling, and lib/<libsetname>.pcm, the
+#   module, which also holds the streamer info (no _rdict.pcm).
+#
+# rootcling writes the module into the directory of the library given with
+# -s and finds the modules it imports there. That is $GLEDSYS/lib, where the
+# modules of the libsets this one depends on are linked; the new module is
+# moved to lib/ and linked back by post_build_install.
 
 use lib "$ENV{GLEDSYS}/perllib";
 use Carp;
@@ -27,36 +38,59 @@ Gled_ConfCat_Parser::import_build_config();
 Gled_ConfCat_Parser::parse_catalog();
 
 my $libset = shift;
-my $dir    = shift;
 my @hdrs   = @ARGV;
 my $dict   = $config->{DICT_DIR};
+my $specs  = $resolver->{LibName2LibSpecs};
 
-my $user_file = "${dir}/LinkDef.h";
-my $stem      = "${libset}_${dir}";
+#-------------------------------------------------------------------------------
+# Selection rules
+#-------------------------------------------------------------------------------
 
-my $user_rules = "";
-if (-r $user_file)
+my (%dir_hdrs, @dirs);
+for my $h (@hdrs)
 {
-  open(FOO, $user_file) or croak "can't open $user_file";
-  local $/;
-  $user_rules = <FOO>;
-  close FOO;
+  my ($d) = $h =~ m!^(\w+)/! or croak "header '$h' not in a directory";
+  push @dirs, $d unless exists $dir_hdrs{$d};
+  push @{$dir_hdrs{$d}}, $h;
 }
 
-my $glass_rules = <<"END";
+my $rules = "";
+for my $dir (@dirs)
+{
+  my $user_file  = "${dir}/LinkDef.h";
+  my $user_rules = "";
+  if (-r $user_file)
+  {
+    open(FOO, $user_file) or croak "can't open $user_file";
+    local $/;
+    $user_rules = <FOO>;
+    close FOO;
+  }
+
+  my $glass_rules = <<"END";
 //==============================================================================
 // Glasses in ${dir} from glass.list
 //==============================================================================
 
 END
-for my $c (@{$CATALOG->{ClassList}})
-{
-  next unless $CATALOG->{Classes}{$c}{Stem} =~ m!^${dir}/!;
-  $glass_rules .= "#pragma link C++ class gled::ZLink<gled::${c}>;\n";
-  unless ($user_rules =~ m/^\s*\#pragma\s+link\s+C\+\+\s+class\s+gled::${c}\s*[-+!]*\s*;/m)
+  for my $c (@{$CATALOG->{ClassList}})
   {
-    $glass_rules .= "#pragma link C++ class gled::${c}+;\n";
+    next unless $CATALOG->{Classes}{$c}{Stem} =~ m!^${dir}/!;
+    $glass_rules .= "#pragma link C++ class gled::ZLink<gled::${c}>;\n";
+    unless ($user_rules =~ m/^\s*\#pragma\s+link\s+C\+\+\s+class\s+gled::${c}\s*[-+!]*\s*;/m)
+    {
+      $glass_rules .= "#pragma link C++ class gled::${c}+;\n";
+    }
   }
+
+  $rules .= <<"END";
+//==============================================================================
+// ${user_file}
+//==============================================================================
+
+${user_rules}
+${glass_rules}
+END
 }
 
 my $linkdef = <<"END";
@@ -70,22 +104,102 @@ my $linkdef = <<"END";
 #pragma link C++ nestedclass;
 #pragma link C++ nestedtypedef;
 
-//==============================================================================
-// ${user_file}
-//==============================================================================
-
-${user_rules}
-${glass_rules}
+${rules}
 #endif
 END
 
-open(FOO, ">$dict/${stem}_LinkDef.h") or croak "can't write $dict/${stem}_LinkDef.h";
+open(FOO, ">$dict/${libset}_LinkDef.h") or croak "can't write $dict/${libset}_LinkDef.h";
 print FOO $linkdef;
 close FOO;
 
-my $exe = "$ENV{ROOTSYS}/bin/rootcling -f $dict/${stem}_Dict.cc " .
+#-------------------------------------------------------------------------------
+# Module map
+#-------------------------------------------------------------------------------
+
+# Follows the #include lines of the libset's own headers. An include is
+# resolved against the libset directory first ("Gled/GTime.h") and then
+# against the directory of the including file ("GTime.h7"); includes that
+# resolve to neither belong to other libsets, ROOT or the system.
+# A header included inside braces, as the .h7 files are included in class
+# bodies and Var1's Opcode.h includes Ice/*.h in namespace Opcode, is pasted
+# into that scope and cannot be a module of its own: it is textual, and so is
+# everything it includes. The braces are counted outside comments and
+# literals, ignoring the preprocessor conditionals.
+my (%seen, %textual);
+my @todo = map { [ $_, 0 ] } @hdrs;
+while (my $x = shift @todo)
+{
+  my ($h, $in_scope) = @$x;
+  $in_scope ||= ($h =~ m/\.h7$/);
+  next if $seen{$h} and (not $in_scope or $textual{$h});
+  $seen{$h} = 1;
+  $textual{$h} = 1 if $in_scope;
+
+  open(my $fh, '<', $h) or croak "can't open $h";
+  my $depth = 0;
+  my $in_comment = 0;
+  while (my $l = <$fh>)
+  {
+    if (not $in_comment and $l =~ m/^\s*#\s*include\s*[<"]([^>"]+)[>"]/)
+    {
+      my $inc = $1;
+      (my $here = $h) =~ s![^/]*$!!;
+      my $f = -f $inc ? $inc : (-f "$here$inc" ? "$here$inc" : undef);
+      push @todo, [ $f, $in_scope || $depth > 0 ] if defined $f;
+      next;
+    }
+    next if $l =~ m/^\s*#/;
+    # Drop comments and literals, then count the braces.
+    if ($in_comment)
+    {
+      next unless $l =~ s!^.*?\*/!!;
+      $in_comment = 0;
+    }
+    $l =~ s!"(\\.|[^"\\])*"!""!g;
+    $l =~ s!'(\\.|[^'\\])*'!''!g;
+    $l =~ s!/\*.*?\*/!!g;
+    $l =~ s!//.*$!!;
+    $in_comment = 1 if $l =~ s!/\*.*$!!;
+    $depth += () = $l =~ m/\{/g;
+    $depth -= () = $l =~ m/\}/g;
+  }
+  close $fh;
+}
+my @modular = grep { not $textual{$_} } keys %seen;
+my @textual = keys %textual;
+
+my $modulemap = "// Generated by gled_mk_dict_gen.pl; do not edit.\n\n" .
+                "module \"${libset}\" {\n  requires cplusplus\n";
+$modulemap .= "  module \"$_\" { header \"$_\" export * }\n" for sort @modular;
+$modulemap .= "  textual header \"$_\"\n"                    for sort @textual;
+$modulemap .= "  export *\n}\n";
+
+open(FOO, ">module.modulemap") or croak "can't write module.modulemap";
+print FOO $modulemap;
+close FOO;
+
+open(FOO, ">lib/module.modulemap") or croak "can't write lib/module.modulemap";
+print FOO "// Generated by gled_mk_dict_gen.pl; do not edit.\n\n" .
+          "extern module ${libset} \"../module.modulemap\"\n";
+close FOO;
+
+#-------------------------------------------------------------------------------
+# rootcling
+#-------------------------------------------------------------------------------
+
+my $deps = "";
+for my $d (@{$specs->{$libset}{Deps}})
+{
+  $deps .= " -m $d.pcm -moduleMapFile=$specs->{$d}{Dir}/module.modulemap";
+}
+
+my $exe = "$ENV{ROOTSYS}/bin/rootcling -f $dict/${libset}_Dict.cc " .
+          "-s $ENV{GLEDSYS}/lib/lib${libset}.so -cxxmodule -writeEmptyRootPCM${deps} " .
           "-I. $ENV{CPPFLAGS} -I$ENV{ROOTSYS}/include " .
-          join(" ", @hdrs) . " $dict/${stem}_LinkDef.h";
+          join(" ", @hdrs) . " $dict/${libset}_LinkDef.h";
 print $exe."\n";
 my $ret = `$exe`;
 croak $ret if $?;
+
+system("mv -f $ENV{GLEDSYS}/lib/${libset}.pcm lib/${libset}.pcm") == 0
+  or croak "can't move $ENV{GLEDSYS}/lib/${libset}.pcm to lib/";

@@ -860,9 +860,9 @@ Stone members can have their specialized widgets. As an example see
 
 Header files are also parsed by `rootcling`, `ROOT`'s dictionary and
 I/O method (`Streamer`) generator. The build runs it once per
-directory: all glasses of the directory get a dictionary entry
-automatically, and other classes of the directory are listed in its
-`LinkDef.h` file (for example `Stones/LinkDef.h`).
+libset and builds the dictionary as a C++ module: all glasses get a
+dictionary entry automatically, and the other classes of a directory
+are listed in its `LinkDef.h` file (for example `Stones/LinkDef.h`).
 
 By adding an `!` on the first character of the comment directly
 following the data member declaration, this member will not be stored/retrieved to/from the stream. Example

@@ -69,6 +69,10 @@ sub find_files_and_dirs($\@\@)
 
   @$files = grep (-f "$path/$_", @dirlist);
   @$files = filter_hidden(@$files);
+  # Every libset has its own lib/module.modulemap; TCling reads it next to
+  # the library with symlinks resolved. Installed into one directory, they
+  # would overwrite each other.
+  @$files = grep { $_ ne "module.modulemap" } @$files;
 
   @$subdirs = grep (-d "$path/$_", @dirlist);
   @$subdirs = filter_hidden(@$subdirs);
