@@ -72,6 +72,9 @@ Build procedure
 
    make builds all libraries and executables and links them into bin/ and
    lib/ here. It uses the default compiler; export CXX to use another.
+   For each libset it first makes the dictionary, a C++ module, and then
+   the libraries. A libset waits only for the libsets it requires, so with
+   -j the others build in parallel.
 
    gled-create glass and gled-create stone write a new class and add it
    to the libset's glass.list or Stones/LinkDef.h, and make picks it up.

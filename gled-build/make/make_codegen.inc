@@ -64,6 +64,13 @@ ${MANIFEST}: glass.list Makefile ${BUILD_CONFIG} ${GLEDMANIFEST}
 # Dictionaries: make_dict.inc is written by gled_mk_dict_dep.pl and is
 # rewritten whenever the glass list, a LinkDef file or the Makefile changes.
 
+# rootcling reads the .h7 files. On a first build the dependency files that
+# name them do not exist yet, so the .h7 files are made first.
+
+ifneq (${DICT_AUTO_SRCS},)
+${DICT_AUTO_SRCS}: | ${BLESSED_H7} ${P7_AUTO_HDRS}
+endif
+
 # Not under QUIET_GOALS, see make_base.inc.
 
 ifeq (${QUIET_GOALS},)

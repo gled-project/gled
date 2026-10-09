@@ -100,6 +100,11 @@ sub install
 
   if ($SYMLINK)
   {
+    # Links that are already right are left alone. 'ln -sf' replaces them,
+    # and while it does, a libset built in parallel can miss the file, e.g.
+    # a module it imports.
+    @files = grep { my ($n) = m!([^/]+)$!; readlink("$dest/$n") ne $_ } @files;
+    return unless @files;
     my @args = ("ln", "-sf", @files, $dest);
     if ($DRYRUN)
     {

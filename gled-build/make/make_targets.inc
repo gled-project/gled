@@ -16,6 +16,13 @@ default: depend
 	${MAKE} all_targets
 	${MAKE} post_build_install
 
+# The first step of the top-level build: the dictionary and the C++ module of
+# the libset, linked into ${GLEDSYS}/lib, where the modules of the libsets
+# that require this one find it.
+.PHONY: module
+module: ${DICT_AUTO_SRCS}
+	${MUTE} ${GLED_INSTALL_DIRS} -rs ${GLEDSYS} ${LIBSET_DIR} lib
+
 base_lib: ${BASE_LIB_NAME}
 	@echo ${LIB_SET_NAME} > lib/gled_lid_${LIB_SET_ID}
 
@@ -113,7 +120,7 @@ pre_depend:: auto_dirs glue manifest
 
 p7_tgts:   ${BLESSED_H7} ${P7_AUTO_HDRS} ${VIEW_SECS}
 
-dep_tgts:  p7_tgts ${MANIFEST} ${DICT_AUTO_SRCS} ${ALL_DEPS} ${DEPEND_TGTS}
+dep_tgts:  p7_tgts ${MANIFEST} ${ALL_DEPS} ${DEPEND_TGTS}
 
 depend:: dep_tgts
 	@touch .depend_done
