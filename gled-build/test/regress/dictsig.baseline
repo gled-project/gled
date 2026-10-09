@@ -86,12 +86,10 @@ class gled::GlobalLamps ver=::gled::GlobalLamps::Class_Version() SetDelete SetDe
 class gled::GravData ver=::gled::GravData::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::GravPlotter ver=::gled::GravPlotter::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::GuiPupilInfo ver=::gled::GuiPupilInfo::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
-class gled::HPoint<Double32_t> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HPoint<double> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HPoint<float> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HPointD ver=::gled::HPointD::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HPointF ver=::gled::HPointF::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
-class gled::HTrans<Double32_t> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HTrans<double> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HTrans<float> ver="Stones/HTrans.h" SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
 class gled::HTransD ver=::gled::HTransD::Class_Version() SetDelete SetDeleteArray SetDestructor SetNew SetNewArray
@@ -482,14 +480,12 @@ hdrname gled::GlobalLamps
 hdrname gled::GravData
 hdrname gled::GravPlotter
 hdrname gled::GuiPupilInfo
-hdrname gled::HPoint<Double32_t>
 hdrname gled::HPoint<Double_t>
 hdrname gled::HPoint<Float_t>
 hdrname gled::HPoint<double>
 hdrname gled::HPoint<float>
 hdrname gled::HPointD
 hdrname gled::HPointF
-hdrname gled::HTrans<Double32_t>
 hdrname gled::HTrans<Double_t>
 hdrname gled::HTrans<Float_t>
 hdrname gled::HTrans<double>

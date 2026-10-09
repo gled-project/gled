@@ -8,7 +8,7 @@ build and the class checksums while corrupting the heap. Run, in this order:
 2. After a ROOT rebuild or upgrade, or a change to `gled_mk_dict_gen.pl`,
    regenerate the dictionaries (remove `libsets/*/dict/*`,
    `libsets/*/lib/*_rdict.pcm`, `lib/*_rdict.pcm`) and rebuild. Make
-   regenerates a dictionary when a gled header it includes, a `LinkDef*.h`
+   regenerates a dictionary when a gled header it includes, a `LinkDef.h`
    or `glass.list` changes, but it does not track ROOT headers or the
    generator.
 3. `regress/` — dictionary selection and class checksums.
@@ -38,11 +38,11 @@ gled aborts while shutting down after the SIGTERM. Check the output too
 against the baseline to show that a change kept the dictionary selection:
 
 ```sh
-perl regress/dictsig.pl $GLEDSYS/libsets/{GledCore,Numerica,Audio1,Geom1,GledGTS,Var1}/dict/*_Dict.cc \
+perl regress/dictsig.pl $GLEDSYS/../libsets/{GledCore,Numerica,Audio1,Geom1,GledGTS,Var1}/dict/*_Dict.cc \
   | diff regress/dictsig.baseline -
 ```
 
-The baseline covers the six base libsets (835 lines, r3031).
+The baseline covers the six base libsets (829 lines, 2026-10-08).
 
 **`ckdump.C`** writes the class version and checksum of the 148 glasses of
 the six base libsets to `CKDUMP.txt` in the current directory:

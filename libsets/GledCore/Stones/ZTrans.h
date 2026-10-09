@@ -14,9 +14,9 @@ namespace gled {
 // ZPoint
 //==============================================================================
 
-class ZPoint : public HPoint<Double32_t>
+class ZPoint : public HPoint<Double_t>
 {
-  typedef HPoint<Double32_t> TP;
+  typedef HPoint<Double_t> TP;
 
 public:
   ZPoint() : TP() {}
@@ -34,9 +34,9 @@ public:
 // ZTrans -- 3D transformation in generalised coordinates
 //==============================================================================
 
-class ZTrans : public HTrans<Double32_t>
+class ZTrans : public HTrans<Double_t>
 {
-  typedef HTrans<Double32_t> TP;
+  typedef HTrans<Double_t> TP;
 
 public:
   ZTrans() : TP() {}
@@ -46,7 +46,7 @@ public:
   ~ZTrans() {}
 
   // Add this explicit setter -- otherwise CINT can't do it.
-  using HTrans<Double32_t>::SetBaseVec;
+  using HTrans<Double_t>::SetBaseVec;
   void SetBaseVec(Int_t b, const ZPoint& v)
   { SetBaseVec(b, v.x, v.y, v.z); }
 

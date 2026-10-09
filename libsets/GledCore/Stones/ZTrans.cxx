@@ -12,9 +12,9 @@ using namespace gled;
 //
 // ZTrans is a 4x4 transformation matrix for homogeneous coordinates
 // stored internaly in a column-major order to allow direct usage by
-// GL. The element type is Double32_t as statically the floats would
-// be precise enough but continuous operations on the matrix must
-// retain precision of column vectors.
+// GL. The element type is Double_t: continuous operations on the matrix
+// must retain precision of column vectors, and a streamed copy must be
+// identical to the original.
 //
 // Cartan angles in mA[1-3] (+z, -y, +x) are stored for backward
 // compatibility and will probably be removed soon.

@@ -7,10 +7,10 @@
 # Generates the ROOT dictionary of one directory of a libset with a single
 # rootcling run.
 #
-# Usage: gled_mk_dict_gen.pl <libsetname> <dir> [-t <tag>] <headers ...>
+# Usage: gled_mk_dict_gen.pl <libsetname> <dir> <headers ...>
 #
-# Without a tag, writes dict/<libsetname>_<dir>_LinkDef.h and runs rootcling
-# over the headers, producing dict/<libsetname>_<dir>_Dict.cc and
+# Writes dict/<libsetname>_<dir>_LinkDef.h and runs rootcling over the
+# headers, producing dict/<libsetname>_<dir>_Dict.cc and
 # dict/<libsetname>_<dir>_Dict_rdict.pcm. The selection rules come from two
 # places:
 # - Every glass in glass.list that lives in <dir> gets 'class gled::<Glass>+'
@@ -18,12 +18,6 @@
 #   <dir>/LinkDef.h names the glass itself, e.g. as 'gled::AList-'.
 # - <dir>/LinkDef.h, if it exists, is copied in verbatim. It lists all the
 #   other classes, namespaces, typedefs, functions and globals.
-#
-# With a tag, the rules come from <dir>/LinkDef_<tag>.h only, and the output
-# is dict/<libsetname>_<dir>_<tag>_Dict.cc. A separate dictionary is needed
-# for rules that rootcling merges within one dictionary, e.g. a template
-# instantiated with Double32_t next to the same template instantiated with
-# double.
 
 use lib "$ENV{GLEDSYS}/perllib";
 use Carp;
@@ -34,13 +28,11 @@ Gled_ConfCat_Parser::parse_catalog();
 
 my $libset = shift;
 my $dir    = shift;
-my $tag;
-if ($ARGV[0] eq '-t') { shift; $tag = shift; }
 my @hdrs   = @ARGV;
 my $dict   = $config->{DICT_DIR};
 
-my $user_file = defined $tag ? "${dir}/LinkDef_${tag}.h" : "${dir}/LinkDef.h";
-my $stem      = defined $tag ? "${libset}_${dir}_${tag}" : "${libset}_${dir}";
+my $user_file = "${dir}/LinkDef.h";
+my $stem      = "${libset}_${dir}";
 
 my $user_rules = "";
 if (-r $user_file)
@@ -51,17 +43,13 @@ if (-r $user_file)
   close FOO;
 }
 
-my $glass_rules = "";
-unless (defined $tag)
-{
-  $glass_rules = <<"END";
+my $glass_rules = <<"END";
 //==============================================================================
 // Glasses in ${dir} from glass.list
 //==============================================================================
 
 END
-}
-for my $c (defined $tag ? () : @{$CATALOG->{ClassList}})
+for my $c (@{$CATALOG->{ClassList}})
 {
   next unless $CATALOG->{Classes}{$c}{Stem} =~ m!^${dir}/!;
   $glass_rules .= "#pragma link C++ class gled::ZLink<gled::${c}>;\n";

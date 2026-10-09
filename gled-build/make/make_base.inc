@@ -46,9 +46,9 @@ INSTALL_DATA_DIRS += cfg macros perllib
 # Sources ... different levels of processing
 ##########################################################################
 
-# Dictionary selection rules (<dir>/LinkDef.h, <dir>/LinkDef_<tag>.h) are not
-# C++ headers and are kept out of the header lists below.
-LINKDEF_HDRS =	$(wildcard $(addsuffix /LinkDef*.h,${DICT_DIRS}))
+# Dictionary selection rules (<dir>/LinkDef.h) are not C++ headers and are
+# kept out of the header lists below.
+LINKDEF_HDRS =	$(wildcard $(addsuffix /LinkDef.h,${DICT_DIRS}))
 
 # Blessed classes
 BLESSED_HDRS +=	$(filter-out ${LINKDEF_HDRS},$(foreach dir,${BLESSED_DIRS},$(wildcard ${dir}/*.h)))
@@ -68,12 +68,11 @@ BASE_OBJS +=	$(addsuffix .o,$(basename ${BASE_SRCS}))
 DICT_SRCS +=	$(foreach dir,${DICT_DIRS},$(wildcard ${dir}/*.cxx))
 DICT_HDRS +=	$(DICT_SRCS:.cxx=.h)
 # One dictionary per directory with headers, from a single rootcling run each:
-# <LibSet>_<dir>_Dict when the directory holds glasses or a LinkDef.h, plus
-# <LibSet>_<dir>_<tag>_Dict for each <dir>/LinkDef_<tag>.h ... created in dict/
+# <LibSet>_<dir>_Dict when the directory holds glasses or a LinkDef.h ...
+# created in dict/
 DICT_HDR_DIRS :=$(patsubst %/,%,$(sort $(dir ${DICT_HDRS})))
 DICT_AUTO_BASE:=$(foreach d,${DICT_HDR_DIRS}, \
-  $(if $(or $(filter ${d},${BLESSED_DIRS}),$(wildcard ${d}/LinkDef.h)),${DICT_DIR}/${LIB_SET_NAME}_${d}_Dict) \
-  $(patsubst ${d}/LinkDef_%.h,${DICT_DIR}/${LIB_SET_NAME}_${d}_%_Dict,$(wildcard ${d}/LinkDef_*.h)))
+  $(if $(or $(filter ${d},${BLESSED_DIRS}),$(wildcard ${d}/LinkDef.h)),${DICT_DIR}/${LIB_SET_NAME}_${d}_Dict))
 DICT_AUTO_SRCS= $(addsuffix .cc,${DICT_AUTO_BASE})
 DICT_AUTO_OBJS=	$(addsuffix .o, ${DICT_AUTO_BASE})
 
