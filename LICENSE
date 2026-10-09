@@ -26,6 +26,10 @@ Third-party code in this repository keeps its own terms:
       Adapted from REveGeoPolyShape and REveGluTess of ROOT's Eve7, by
       Matevz Tadel and Alja Mrak-Tadel. ROOT is distributed under the GNU
       Lesser General Public License, version 2.1 or later.
+  libsets/GledCore/Rnr/GL/FTGL.h, FTGL.cxx
+      FTGL 2.1.2 as forked by ROOT (graf3d/ftgl of ROOT 6.28), Copyright
+      (C) 2001-3 Henry Maddocks. MIT license; the full notice is at the top
+      of both files.
   libsets/GledCore/RnrBase/Fl_Event_Enums.h
       Excerpt of FLTK's Enumerations.H, Copyright 1998-2005 by Bill Spitzak
       and others. GNU Library General Public License, version 2 or later.

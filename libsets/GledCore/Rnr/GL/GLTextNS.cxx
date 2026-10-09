@@ -10,7 +10,7 @@
 
 #include <TMath.h>
 
-#include "FTFont.h"
+#include "FTGL.h"
 
 using namespace gled;
 

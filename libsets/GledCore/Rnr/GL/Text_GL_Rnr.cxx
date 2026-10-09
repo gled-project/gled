@@ -10,7 +10,7 @@
 
 #include <GL/glew.h>
 
-#include "FTFont.h"
+#include "FTGL.h"
 
 using namespace gled;
 

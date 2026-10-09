@@ -8,9 +8,9 @@
 #include <Glasses/WGlFrameStyle.h>
 #include <Rnr/GL/ZRnrModBase_GL_Rnr.h>
 
-class FTFont;
-
 namespace gled {
+
+class FTFont;
 
 class WGlFrameStyle_GL_Rnr : public ZRnrModBase_GL_Rnr
 {

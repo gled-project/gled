@@ -8,9 +8,9 @@
 #include <Gled/GledTypes.h>
 #include <GL/glew.h>
 
-class FTFont;
-
 namespace gled {
+
+class FTFont;
 
 class RnrDriver;
 class ZColor;

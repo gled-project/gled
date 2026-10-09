@@ -11,11 +11,16 @@ The base libsets need:
  GLEW
  DevIL     1.7                         https://openil.sourceforge.net
  freetype
- FTGL      Gled's fork of 2.1.2, built as a static library
+ GSL
 
-GledGTS needs GTS 0.7, Audio1 needs OpenAL and freealut. OpenSSL is used
-for authentication, see --nossl below. The gled-builder repository builds
-all of these into one prefix.
+GledGTS needs GTS 0.7, Audio1 needs OpenAL, freealut and libvorbis. FTGL,
+ROOT's fork of 2.1.2, is part of GledCore (Rnr/GL/FTGL.h and FTGL.cxx).
+OpenSSL is used for authentication, but the RSA code still uses the
+OpenSSL 1.x API, so use --nossl (below) with OpenSSL 3. A distribution's
+packages cover everything (on Fedora: fltk-devel, glew-devel,
+mesa-libGLU-devel, DevIL-devel, freetype-devel, gsl-devel, gts-devel,
+openal-soft-devel, freealut-devel, libvorbis-devel); the gled-builder
+repository can instead build them into one prefix.
 
 Build procedure
 ---------------

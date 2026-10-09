@@ -28,16 +28,26 @@ GledGTS (GTS surfaces), Var1, RootGeo (ROOT geometries) and Tmp1.
 
 ## Building
 
-Gled needs ROOT 6, FLTK 1.3 with thread and OpenGL support, GLEW, DevIL,
-freetype and Gled's fork of FTGL 2.1.2. GledGTS needs GTS, and Audio1
-needs OpenAL and freealut. OpenSSL is used for authentication; configure
-`--nossl` builds without it. The gled-builder repository builds these
-externals into one prefix.
+Gled needs ROOT 6, FLTK 1.3 with thread and OpenGL support, GLEW, GLU,
+DevIL, freetype and GSL. GledGTS needs GTS, and Audio1 needs OpenAL,
+freealut and libvorbis. FTGL is part of GledCore. The RSA authentication
+code still uses the OpenSSL 1.x API, so configure with `--nossl` on current
+systems.
+
+On Fedora 42 the system packages cover all of it:
+
+```sh
+dnf install fltk-devel glew-devel mesa-libGLU-devel DevIL-devel freetype-devel \
+  gsl-devel gts-devel openal-soft-devel freealut-devel libvorbis-devel
+```
+
+The gled-builder repository can instead build the externals into one
+prefix; pass that prefix to `configure` with `--external`.
 
 ```sh
 cd gled-build
 export ROOTSYS=<ROOT installation> GLEDSYS=$PWD
-./configure --external <prefix of the externals> --libsets '<auto>'
+./configure --nossl --libsets '<auto>'
 source build_env.sh
 make -j8
 ```

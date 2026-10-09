@@ -84,7 +84,8 @@ distclean::
 
 #===============================================================================
 
-ABOVE_RNR_GL_LIBS += ${ROOT_LD_DIR} -lFTGL
+# FTGL is compiled into the GL renderer library (Rnr/GL/FTGL.{h,cxx}).
+ABOVE_RNR_GL_LIBS += $(shell pkg-config --libs freetype2)
 
-Rnr/GL/GLTextNS.o Rnr/GL/Text_GL_Rnr.o Rnr/GL/WGlFrameStyle_GL_Rnr.o \
-Rnr/GL/ZRlFont_GL_Rnr.o : CPPFLAGS += $(shell freetype-config --cflags)
+Rnr/GL/FTGL.o Rnr/GL/GLTextNS.o Rnr/GL/Text_GL_Rnr.o Rnr/GL/WGlFrameStyle_GL_Rnr.o \
+Rnr/GL/ZRlFont_GL_Rnr.o : CPPFLAGS += $(shell pkg-config --cflags freetype2)

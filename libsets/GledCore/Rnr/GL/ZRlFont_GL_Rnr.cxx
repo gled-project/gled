@@ -6,13 +6,7 @@
 #include <RnrBase/RnrDriver.h>
 #include <GL/glew.h>
 
-#include "FTFont.h"
-#include "FTGLExtrdFont.h"
-#include "FTGLOutlineFont.h"
-#include "FTGLPolygonFont.h"
-#include "FTGLTextureFont.h"
-#include "FTGLPixmapFont.h"
-#include "FTGLBitmapFont.h"
+#include "FTGL.h"
 
 using namespace gled;
 
