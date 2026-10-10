@@ -44,8 +44,8 @@ void iso_surfs()
   surf1->SetPos(3, 0, 0);
   surf1->SetColor(1,0.8,0.2);
   maker1->SetTarget(surf1);
-  maker1->SetFormula("x^2 + y^2 + z^2");
-  maker1->SetValue(1.2);
+  maker1->SetFormula("-(x^2 + y^2 + z^2)");
+  maker1->SetValue(-1.2);
   maker1->MakeSurface();
 
   CREATE_ADD_GLASS(maker2, GTSIsoMaker, starw, "Iso Maker 2", 0);
@@ -53,8 +53,8 @@ void iso_surfs()
   surf2->SetRotByDegrees(0,30,-30);
   surf2->SetColor(0.2,1,0.8);
   maker2->SetTarget(surf2);
-  maker2->SetFormula("(0.8 - sqrt(x^2 + y^2))^2 + z^2");
-  maker2->SetValue(0.04);
+  maker2->SetFormula("-((0.8 - sqrt(x^2 + y^2))^2 + z^2)");
+  maker2->SetValue(-0.04);
   maker2->MakeSurface();
 
   CREATE_ADD_GLASS(mat,   ZGlMaterial, starw, "Material1", 0);
@@ -72,8 +72,8 @@ void iso_surfs()
   surf3->SetUseScale(true);
   surf3->SetColor(0.8,0.2,1);
   maker3->SetTarget(surf3);
-  maker3->SetFormula("(x^2+y^2) - z^2/0.75");
-  maker3->SetValue(-0.05);
+  maker3->SetFormula("z^2/0.75 - (x^2+y^2)");
+  maker3->SetValue(0.05);
   maker3->MakeSurface();
 
   CREATE_ADD_GLASS(retring, GTSRetriangulator, starw, "GTS Retriangulator", "Coarsens and refines GTS Surfaces");

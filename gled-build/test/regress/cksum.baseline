@@ -25,7 +25,7 @@ gled::Flyer ver=1 cksum=2462389867
 gled::FormulaMover ver=1 cksum=554801933
 gled::GForger ver=1 cksum=1846020594
 gled::GLTesterOne ver=1 cksum=2569798814
-gled::GTSIsoMaker ver=1 cksum=2729332859
+gled::GTSIsoMaker ver=1 cksum=2206864481
 gled::GTSRetriangulator ver=1 cksum=3276894930
 gled::GTSTorus ver=1 cksum=2954771313
 gled::GTSurf ver=1 cksum=2850548537

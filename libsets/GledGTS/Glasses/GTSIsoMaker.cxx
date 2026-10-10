@@ -30,7 +30,6 @@ void GTSIsoMaker::_init()
   mXmin = mYmin = mZmin = -1;
   mXmax = mYmax = mZmax =  1;
   mXdiv = mYdiv = mZdiv = 20;
-  bInvertCartesian = bInvertTetra = false;
   mFixPointEpsilon = 1e-12;
   mFixPointMaxIter = 1000;
 }
@@ -131,12 +130,6 @@ void GTSIsoMaker::MakeSurface()
   else
   {
     delete formula;
-  }
-
-  if ((mAlgo == A_Cartesian && bInvertCartesian) ||
-      (mAlgo >  A_Cartesian && bInvertTetra))
-  {
-    InvertSurface(s);
   }
 
   target->WriteLock();

@@ -776,8 +776,8 @@ void setup_torus_outside()
   pstor->SetRm(rm);
 
   // Setup GTS surface.
-  gtsisomaker->SetFormula(Form("(%f - sqrt(x^2 + y^2))^2 + z^2", rM));
-  gtsisomaker->SetValue(rm*rm);
+  gtsisomaker->SetFormula(Form("-((%f - sqrt(x^2 + y^2))^2 + z^2)", rM));
+  gtsisomaker->SetValue(-rm*rm);
 
   Int_t ndiv = 50, ndivz = 16; // TMath::Nint(ndiv*rS/rm);
   gtsisomaker->SetXAxis(-tweak(gRandom, rS), tweak(gRandom, rS), ndiv);
@@ -817,8 +817,8 @@ void setup_torus_inside()
   pstor->SetRm(rm);
 
   // Setup GTS surface.
-  gtsisomaker->SetFormula(Form("(%f - sqrt(x^2 + y^2))^2 + z^2", rM));
-  gtsisomaker->SetValue(rm*rm);
+  gtsisomaker->SetFormula(Form("-((%f - sqrt(x^2 + y^2))^2 + z^2)", rM));
+  gtsisomaker->SetValue(-rm*rm);
 
   Int_t ndiv = 25, ndivz = 8; // TMath::Nint(ndiv*rS/rm);
   gtsisomaker->SetXAxis(-tweak(gRandom, rS), tweak(gRandom, rS), ndiv);

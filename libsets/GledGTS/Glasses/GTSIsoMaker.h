@@ -43,9 +43,6 @@ protected:
   Double_t		mZmax;    // X{GS} 7 Value(-range=>[-100,100,1,1000], -join=>1)
   UInt_t		mZdiv;    // X{GS} 7 Value(-range=>[2, 10000,1])
 
-  Bool_t                bInvertCartesian; // X{GS} 7 Bool()
-  Bool_t                bInvertTetra;     // X{GS} 7 Bool()
-
   Double_t              mFixPointEpsilon; // X{GS} 7 Value()
   Int_t                 mFixPointMaxIter; // X{GS} 7 Value()
 
