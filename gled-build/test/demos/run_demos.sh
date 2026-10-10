@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs GUI demos and checks how they ran and shut down; see test/README.md.
 #   run_demos.sh <outdir> [<LibSet>/<macro>.C ...]
+# <LibSet>/<a>.C+<b>.C runs the macros one after the other in one gled.
 
 BASE_DEMOS="Geom1/eden.C Geom1/gl_tests.C Geom1/images2.C Geom1/images.C Geom1/metagui_test.C
   Geom1/remove_test.C Geom1/rot_lamps.C Geom1/spheres.C Geom1/WS_demo.C
@@ -18,12 +19,14 @@ demos=${*:-$BASE_DEMOS}
 
 fail=0
 for d in $demos; do
-  ls=${d%%/*}; m=${d#*/}; log=$out/$ls-${m%.C}.log
-  if [ ! -f "$DEMOS_DIR/$ls/$m" ]; then
-    printf "FAIL  %-32s no such macro in %s\n" "$d" "$DEMOS_DIR/$ls"
+  ls=${d%%/*}; m=${d#*/}; ms=${m//+/ }; log=$out/$ls-${m//.C/}.log
+  missing=
+  for x in $ms; do [ -f "$DEMOS_DIR/$ls/$x" ] || missing="$missing $x"; done
+  if [ -n "$missing" ]; then
+    printf "FAIL  %-32s no such macro in %s:%s\n" "$d" "$DEMOS_DIR/$ls" "$missing"
     fail=$((fail+1)); continue
   fi
-  (cd "$DEMOS_DIR/$ls" && timeout 22 gled --noprompt "$m" > "$log" 2>&1)
+  (cd "$DEMOS_DIR/$ls" && timeout 22 gled --noprompt $ms > "$log" 2>&1)
   st=$?
   nbad=$(grep -a -c -E "$BAD" "$log")
   nloop=$(grep -a -c 'exiting GledGUI::MessageLoop' "$log")

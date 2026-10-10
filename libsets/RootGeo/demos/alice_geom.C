@@ -34,7 +34,11 @@ void alice_geom(Int_t import_mode=0)
   //--------------------------------------------------------------
 
   printf("Importing geometry ...\n");
-  TGeoManager::Import("alice_all.root");
+  if (TGeoManager::Import("alice_all.root") == 0)
+  {
+    printf("alice_geom.C: can not import geometry from alice_all.root.\n");
+    return;
+  }
   printf("Done importing geometry.\n");
 
   //--------------------------------------------------------------

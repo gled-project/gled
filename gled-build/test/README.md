@@ -92,8 +92,10 @@ Runs each demo for 22 s and checks the exit status (124), the log (no crash,
 heap-corruption, cling or ROOT error lines) and that the GUI message loop
 exited. A macro that does not exist fails. The demos are taken from
 `$DEMOS_DIR/<LibSet>`, `$GLEDSYS/demos/<LibSet>` by default.
-Without a list it runs the 14 base demos of GledCore and Geom1. The exit status
-is the number of failures; each log is kept in `<outdir>`.
+Without a list it runs the 14 base demos of GledCore and Geom1.
+`<LibSet>/<a>.C+<b>.C` runs the macros one after the other in one `gled`,
+for add-ons such as `XrdMon/xrd_suck_udp.C+xrd_udp_tree_writer.C`. The
+exit status is the number of failures; each log is kept in `<outdir>`.
 
 ## cluster/
 

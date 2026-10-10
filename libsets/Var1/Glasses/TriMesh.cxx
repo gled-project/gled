@@ -496,6 +496,7 @@ void TriMesh::ImportOoliteDAT(const TString& filename, Bool_t invert_triangles)
   static const Exc_t _eh("TriMesh::ImportOoliteDAT ");
 
   std::ifstream f(filename);
+  if ( ! f) throw _eh + "can not open file '" + filename + "'.";
   TPMERegexp comment_re("^\\s*//", "o");
 
   TString l;
