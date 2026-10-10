@@ -28,6 +28,8 @@ LIBSET_PREREQS += lib/libOpcode.${LDEXT}
 include ${GLEDSYS}/make/make_targets.inc
 #--------------------------------------------------------------
 
+# Opcode/Makefile decides what to rebuild.
+.PHONY: lib/libOpcode.${LDEXT}
 lib/libOpcode.${LDEXT}:
 	${MAKE} -C Opcode
 
