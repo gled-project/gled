@@ -44,7 +44,8 @@ dnf install fltk-devel glew-devel mesa-libGLU-devel DevIL-devel freetype-devel \
 
 gts-cxx, the C++23 rewrite of GTS (https://github.com/gled-project/gts-cxx),
 is not packaged. It needs GCC 15. Build it with `make lib` and pass its
-directory to `configure` with `--external`.
+directory to `configure` with `--external`. Gled compiles with ROOT's C++
+standard, so GledGTS needs ROOT built with `CMAKE_CXX_STANDARD=23`.
 
 The gled-builder repository can instead build the externals into one
 prefix; pass that prefix to `configure` with `--external`.

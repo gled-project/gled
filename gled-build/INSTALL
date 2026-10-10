@@ -28,7 +28,8 @@ one prefix.
 gts-cxx is the C++23 rewrite of GTS. Build it with 'make lib' in its
 directory and give that directory to configure with -external, or install
 it with 'make install PREFIX=<prefix>' and give the prefix. gled-builder
-clones and builds it.
+clones and builds it. Gled compiles with ROOT's C++ standard, so GledGTS
+needs ROOT built with CMAKE_CXX_STANDARD=23.
 
 Build procedure
 ---------------

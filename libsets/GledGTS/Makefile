@@ -18,10 +18,6 @@ BASE_LD_LIBS	= -lgts-cxx
 include ${GLEDSYS}/make/make_base.inc
 #--------------------------------------------------------------
 
-# gts-cxx needs C++23; ROOT's #warning about the mismatch is silenced. The
-# glass headers do not include gts-cxx, so the dictionary stays at C++20.
-CXXFLAGS += -std=c++23 -Wno-cpp
-
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_targets.inc
 #--------------------------------------------------------------
