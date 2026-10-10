@@ -142,7 +142,7 @@ undepend:
 
 clean::
 	${MUTE} rm -f ${ALL_OBJS} ${ALL_DEPS} .depend_done
-	${MUTE} find . -name '*.d' -or -name '*.o' | xargs rm -f
+	${MUTE} find . -type f \( -name '*.d' -or -name '*.o' \) | xargs rm -f
 
 distclean::
 	${MAKE} build_uninstall
