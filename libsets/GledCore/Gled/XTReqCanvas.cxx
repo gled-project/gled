@@ -4,7 +4,8 @@
 
 #include "XTReqCanvas.h"
 
-#include "TCanvas.h"
+#include "TROOT.h"
+#include "TVirtualPad.h"
 #include "TSystem.h"
 #include "TClass.h"
 
@@ -18,11 +19,19 @@ using namespace gled;
 
 void XTReqCanvas::Act()
 {
-  fCanvas = new TCanvas(fName, fTitle, fW, fH);
+  // Through cling, so that libGledCore does not need libGpad: with TPad
+  // known at start-up, TApplication would set up the graphics right away.
+  TString name(fName), title(fTitle);
+  name.ReplaceAll("\\", "\\\\").ReplaceAll("\"", "\\\"");
+  title.ReplaceAll("\\", "\\\\").ReplaceAll("\"", "\\\"");
+  fCanvas = (TCanvas*) gROOT->ProcessLineFast(TString::Format(
+    "new TCanvas(\"%s\", \"%s\", %d, %d)", name.Data(), title.Data(), fW, fH));
   if (fCanvas && (fNPx > 1 || fNPy > 1))
   {
-    fCanvas->Divide(fNPx, fNPy);
-    fCanvas->Update();
+    TVirtualPad *pad = (TVirtualPad*) gROOT->ProcessLineFast(TString::Format(
+      "(TVirtualPad*)(TCanvas*)%p", (void*) fCanvas));
+    pad->Divide(fNPx, fNPy);
+    pad->Update();
   }
 
   // Make sure window is on screen before we pass it back ...

@@ -13,7 +13,7 @@ DICT_DIRS	= Glasses Stones Gled Ephra
 VIEW_DIRS	= GledView FL
 VIEW_FL_DIRS	= FL
 
-BASE_LD_LIBS	= ${ROOT_LD_DIR} -lHist -lRIO -lNet -lMatrix -lGpad -lssl
+BASE_LD_LIBS	= ${ROOT_LD_DIR} -lHist -lRIO -lNet -lMatrix -lssl
 
 MAINSRCS := saturn.cxx gled.cxx
 MAINOBJS := $(MAINSRCS:.cxx=.o)
@@ -56,13 +56,10 @@ bin/saturn: saturn.o ${BASE_LIB_NAME}
 	${MUTE} ${LD} ${LDFLAGS} saturn.o -o $@ \
 	  -Llib -l${LIB_SET_NAME} ${LDFLAGS_ASNEEDED} ${ROOTLIBS} ${SYSLIBS}
 
-# TApplication loads libGui for the X11 graphics anyway; linked here, it loads
-# faster than later through cling.
 bin/gled: gled.o ${BASE_LIB_NAME} ${VIEW_LIB_NAME}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDFLAGS} gled.o -o $@ \
 	  -Llib -l${LIB_SET_NAME} -l${LIB_SET_NAME}_View \
-	  ${ROOT_LD_DIR} -lGui \
 	  ${LDFLAGS_ASNEEDED} ${ROOTLIBS} ${SYSLIBS} ${GUILIBS} ${ROOTGLIBS}
 # On 10.7, this creates folder gled.app; and it seems broken.
 # ifeq (${GLED_SYSTEM},Darwin)
