@@ -62,7 +62,7 @@ void ZKing::BlessMIR(ZMIR& mir)
   // Performs dependenciy check of context arguments and access
   // authorization.
 
-  static TString _eh("ZKing::BlessMIR ");
+  static const Exc_t _eh("ZKing::BlessMIR ");
 
   // Dependency check
   // Mild version ... just assert args in moon or sun space.
@@ -164,7 +164,7 @@ void ZKing::reflect_queen(ZQueen* queen_to_mirror, SaturnInfo* moon)
   //   if(have the queen active) push it along
   //   else forward the request and mark thingies (queen and the new reflector).
 
-  static TString _eh("ZKing::reflect_queen() ");
+  static const Exc_t _eh("ZKing::reflect_queen() ");
 
   assert_MIR_presence(_eh);
 
@@ -247,7 +247,7 @@ void ZKing::activate_queen(ZQueen* queen)
   // Invoke it upon reflection.
   // Check, if the queen has any aspiring reflectors ... forward the beam to them
 
-  static TString _eh("ZKing::activate_queen() ");
+  static const Exc_t _eh("ZKing::activate_queen() ");
 
   ZMIR* mir = assert_MIR_presence(_eh);
 
@@ -284,7 +284,7 @@ void ZKing::receive_eunuch()
 {
   // Receives an eunuch.
 
-  static TString _eh("ZKing::receive_eunuch ");
+  static const Exc_t _eh("ZKing::receive_eunuch ");
   ZMIR* mir = assert_MIR_presence(_eh, ZGlass::MC_IsBeam);
 
   ZEunuch* e = GledNS::StreamLensByGlass<ZEunuch*>(*mir);

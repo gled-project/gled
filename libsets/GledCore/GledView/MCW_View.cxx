@@ -189,7 +189,7 @@ MCW_View::VarArg::VarArg(const TString& typ,  const TString& base_typ,
 
 void MCW_View::VarArg::StreamData(TBuffer& b)
 {
-  const static TString _eh("MCW_View::VarArg::StreamData ");
+  static const Exc_t _eh("MCW_View::VarArg::StreamData ");
 
   arg_type& at = VarArgTypes[_typ_idx];
   switch(at.weed_type) {

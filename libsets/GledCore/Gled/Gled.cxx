@@ -35,6 +35,8 @@
 #include <Getline.h>
 #include <TEnv.h>
 
+#include <fstream>
+
 #include <cerrno>
 
 // Needed for daemon socket hack ...
@@ -1070,9 +1072,19 @@ const char* Gled::GetPrivKeyFile(TString& id, Bool_t use_exc)
 
 Bool_t Gled::IsIdentityInGroup(const char* id, const char* group)
 {
-  //printf("Gled::IsIdentityInGroup checking if %s in group %s\n", id, group);
-  return (gSystem->Exec(GForm("grep -q %s %s/groups/%s",
-                              id, mAuthDir.Data(), group)) == 0) ? true : false;;
+  // The group file lists one identity per line.
+  if (strchr(group, '/')) return false;
+
+  std::ifstream f(GForm("%s/groups/%s", mAuthDir.Data(), group));
+  std::string   line;
+  while (std::getline(f, line))
+  {
+    size_t b = line.find_first_not_of(" \t\r");
+    if (b == std::string::npos) continue;
+    size_t e = line.find_last_not_of(" \t\r");
+    if (line.compare(b, e - b + 1, id) == 0) return true;
+  }
+  return false;
 }
 
 /**************************************************************************/

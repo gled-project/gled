@@ -1,7 +1,10 @@
 // std_auth.C ~ set-up of standard Gled auth mechanisms
 // requires: spawned saturn
 
+#include <Gled/GledNS.h>
 #include <glass_defines.h>
+
+using namespace gled;
 
 void load_std_identities(ZSunQueen* sq)
 {

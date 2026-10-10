@@ -156,9 +156,20 @@ auth/run_auth.sh <outdir> [<port>]
 ```
 
 Makes key pairs with `gled-auth-init` in `<outdir>`, starts a sun with
-`--auth` on `<port>` (default 9161) and connects a `saturn` to it,
-five times: with matching keys, with a 1024-bit sun key and 2048-bit client
-keys, with a client private key that does not match its public key, with an
-identity the sun does not know and as a guest. The first two must connect
-and the others must be denied, with the reason in the client's log. Takes
-about 50 s; the exit status is the number of failures.
+`--auth` on `<port>` (default 9161) and connects a `saturn` to it, once
+for each case:
+
+- matching keys, and a 1024-bit sun key with 2048-bit client keys: the
+  client connects;
+- a client private key that does not match its public key, an identity the
+  sun does not know, and a guest: the client is denied, with the reason in
+  its log;
+- the sun runs `macros/std_auth.C` and the client asks for the group
+  identity `@test` (`attach_group.C`): refused when the group file lists
+  `xsaturn`, granted when it lists `saturn`;
+- with `DISPLAY` set, a `gled` runs `macros/moon.C` and its Eye logs in as
+  `mercury`, through the sun's direct socket: with the right key it
+  connects, with a wrong key it is refused and `gled` still exits on
+  SIGTERM.
+
+Takes about two minutes; the exit status is the number of failures.

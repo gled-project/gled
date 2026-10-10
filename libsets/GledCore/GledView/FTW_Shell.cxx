@@ -61,20 +61,23 @@ FTW_Shell* FTW_Shell::Create_FTW_Shell(TSocket* sock,
   ShellInfo* si = dynamic_cast<ShellInfo*>(ud_lens);
   if(si == 0) throw _eh + "user-data is not ShellInfo.";
 
-  Fl::lock();
+  // The Eye constructor throws when the login is refused.
+  struct FltkLock { FltkLock() { Fl::lock(); } ~FltkLock() { Fl::awake(); Fl::unlock(); } };
 
-  FTW_Shell* shell = new FTW_Shell(sock, ei, ggui->GetSwmManager());
-  shell->SetImg(shell->DemanglePtr(ud_lens));
-  shell->mShellInfo = si;
+  FTW_Shell* shell;
+  {
+    FltkLock _lck;
 
-  shell->_bootstrap();
+    shell = new FTW_Shell(sock, ei, ggui->GetSwmManager());
+    shell->SetImg(shell->DemanglePtr(ud_lens));
+    shell->mShellInfo = si;
 
-  shell->show();
+    shell->_bootstrap();
 
-  shell->_bootstrap_subshells();
+    shell->show();
 
-  Fl::awake();
-  Fl::unlock();
+    shell->_bootstrap_subshells();
+  }
 
   shell->InstallFdHandler();
   return shell;

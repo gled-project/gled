@@ -50,15 +50,6 @@ ZLog::~ZLog()
 
 //==============================================================================
 
-// void ZLog::operator()(Int_t level, const char* sth)
-// {
-//   clock_t clk = clock();
-//   printf("Clocka %lu %lu\n", clk, clk / CLOCKS_PER_SEC);
-//   printf("Jebojebo, got lvl=%d, txt='%s'\n", level, sth);
-// }
-
-//==============================================================================
-
 void ZLog::StartLogging()
 {
   static const Exc_t _eh("ZLog::StartLogging ");

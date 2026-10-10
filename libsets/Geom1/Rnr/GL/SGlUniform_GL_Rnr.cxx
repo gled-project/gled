@@ -120,7 +120,7 @@ void SGlUniform_GL_Rnr::apply()
     case GL_SAMPLER_1D_SHADOW: glUniform1iv(mUni->fLocation, mUni->fArrSize, mData.fInt);    break;
     case GL_SAMPLER_2D_SHADOW: glUniform1iv(mUni->fLocation, mUni->fArrSize, mData.fInt);    break;
 
-    default: throw Exc_t("Jebo te uniform - unknown type\n");
+    default: throw Exc_t("SGlUniform_GL_Rnr unknown uniform type");
   }  
 }
 

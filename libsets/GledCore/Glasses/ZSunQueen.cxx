@@ -164,7 +164,7 @@ void ZSunQueen::CremateMoon(SaturnInfo* moon)
   // If sent as MT_Beam interprets it as request to shut down
   // connection to the moon with notification sent to SunQueen.
 
-  static TString _eh("ZSunQueen::CremateMoon ");
+  static const Exc_t _eh("ZSunQueen::CremateMoon ");
   ZMIR* mir = ZGlass::assert_MIR_presence(_eh);
 
   if(moon->GetMaster() == mSaturn->GetSaturnInfo()) {
@@ -619,7 +619,7 @@ ZIdentity* ZSunQueen::GetOrImportIdentity(const char* ident)
 
 void ZSunQueen::AttachIdentity(ZIdentity* id)
 {
-  static TString _eh("ZSunQueen::AttachIdentity ");
+  static const Exc_t _eh("ZSunQueen::AttachIdentity ");
 
   ZMIR* mir = assert_MIR_presence(_eh);
 
@@ -652,7 +652,7 @@ void ZSunQueen::AttachIdentity(ZIdentity* id)
 
 void ZSunQueen::DetachIdentity(ZIdentity* id)
 {
-  static TString _eh("ZSunQueen::DetachIdentity ");
+  static const Exc_t _eh("ZSunQueen::DetachIdentity ");
 
   ZMIR* mir = assert_MIR_presence(_eh);
   if(id == 0)

@@ -1171,8 +1171,8 @@ int GledNS::tokenize_url(const TString& url, std::list<url_token>& l)
 
 TString GledNS::get_uuid_string()
 {
-  static GMutex jebo_mutex;
-  GMutexHolder _jml(jebo_mutex);
+  static GMutex uuid_mutex;
+  GMutexHolder _lck(uuid_mutex);
   return TString(TUUID().AsString());
 }
 

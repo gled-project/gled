@@ -35,7 +35,6 @@
 /**************************************************************************/
 
 #define PATH_FIND_GLASS(_var_, _glass_, _lens_, _path_) \
-  _glass_* _var_ = _lens_->FindLensByPath(_path_); \
-  if(_var_ && GledNS::IsA(_var_, _glass_::FID())==false) _var_ = 0
+  _glass_* _var_ = dynamic_cast<_glass_*>(_lens_->FindLensByPath(_path_))
 
 #endif

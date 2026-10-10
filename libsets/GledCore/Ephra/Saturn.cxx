@@ -2005,15 +2005,15 @@ void Saturn::UnfoldMIR(std::unique_ptr<ZMIR>& mir)
     return;
   }
   catch(TString& str) {
-    printf("Jebo TString exception: '%s'\n", str.Data());
+    report_mir_post_demangling_error(*mir, _eh + "processing failed: " + str);
     return;
   }
   catch(std::exception& exc) {
-    printf("Jebo std::exception: '%s'\n", exc.what());
+    report_mir_post_demangling_error(*mir, _eh + "processing failed: " + exc.what());
     return;
   }
   catch(...) {
-    printf("Jebo unknown exception. This looks bad.\n");
+    ISerr(_eh + "processing failed: unknown exception.");
     throw;
   }
 }
