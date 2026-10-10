@@ -295,7 +295,6 @@ GLED_SYSTEM := $config->{SYSTEM}
 $sys_specific
 fnord
     
-  $text .= "NOSSL := 1\n\n" if $config->{NOSSL};
   return $text;
 }
 

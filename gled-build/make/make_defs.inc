@@ -111,7 +111,7 @@ GUILIBS	  = ${FLTKLIBS} -lX11
 # bring GL and GLU along.
 GLLIBS    = -lGLEW -lGLU -lGL
 
-SYSLIBS	= -lcrypto -lssl -lm -ldl
+SYSLIBS	= -lm -ldl
 
 ##########################################################################
 # Rules

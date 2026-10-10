@@ -13,15 +13,15 @@ The base libsets need:
  DevIL     1.7                         https://openil.sourceforge.net
  freetype
  GSL
+ OpenSSL   3                           for authentication
 
 GledGTS needs GTS 0.7, Audio1 needs OpenAL, freealut and libvorbis. FTGL,
 ROOT's fork of 2.1.2, is part of GledCore (Rnr/GL/FTGL.h and FTGL.cxx).
-OpenSSL is used for authentication, but the RSA code still uses the
-OpenSSL 1.x API, so use --nossl (below) with OpenSSL 3. A distribution's
-packages cover everything (on Fedora: fltk-devel, glew-devel,
-mesa-libGLU-devel, DevIL-devel, freetype-devel, gsl-devel, gts-devel,
-openal-soft-devel, freealut-devel, libvorbis-devel); the gled-builder
-repository can instead build them into one prefix.
+A distribution's packages cover everything (on Fedora: fltk-devel,
+glew-devel, mesa-libGLU-devel, DevIL-devel, freetype-devel, gsl-devel,
+openssl-devel, gts-devel, openal-soft-devel, freealut-devel,
+libvorbis-devel); the gled-builder repository can instead build them into
+one prefix.
 
 Build procedure
 ---------------
@@ -50,7 +50,6 @@ Build procedure
       -libsetpath    ':' separated directories holding libset directories,
                      <dir>/<LibSet>/Makefile, relative to this directory;
                      default ../libsets
-      -nossl         build without OpenSSL, so without authentication
       -debug         implies -DDEBUG and -g (otherwise -O)
       -ucpp <str>    user cpp-flags (e.g. -D_SOMETHING_)
       -ucxx <str>    user cxx-flags

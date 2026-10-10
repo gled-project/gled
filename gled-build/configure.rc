@@ -52,7 +52,6 @@ builddate	=s	.	BUILD_DATE_IN	  "<today>"
 noviewlibs	!	.	NOVIEWLIBS	0
 nornrlibs	!	.	NORNRLIBS	0
 rnr		=s	.	RENDERERS	"GL"
-nossl           !       .       NOSSL           0
 
 ### libset configuration ###
 #

@@ -10,9 +10,7 @@
 #include <Gled/GCondition.h>
 #include <Gled/GThread.h>
 #include <Gled/TRootXTReq.h>
-#ifndef NOSSL
 #include <Gled/GKeyRSA.h>
-#endif
 #include <Ephra/Saturn.h>
 #include <Glasses/ZQueen.h>
 #include <Glasses/SaturnInfo.h>
@@ -75,6 +73,7 @@ void Gled::next_arg_or_die(lStr_t& args, lStr_i& i, bool allow_single_minus)
 Gled::Gled() :
   mSaturn       (0),
   bIsSun        (false),
+  mSunKey       (0),
   bQuit         (false),
   bHasPrompt    (true),
   bShowSplash   (true),
@@ -871,6 +870,7 @@ Gled::~Gled()
 {
   delete mSaturn;
   delete mRootApp;
+  delete mSunKey;
 }
 
 /**************************************************************************/
@@ -916,17 +916,16 @@ void Gled::SpawnSun()
   if (mSaturnInfo->GetUseAuth())
   {
     CheckAuthDir();
-#ifndef NOSSL
-    GKeyRSA::init_ssl();
-    if (GetPrivKeyFile(mSaturnInfo->mLogin) == 0)
+    mSunKey = new GKeyRSA;
+    try
     {
-      std::cerr << _eh << "can not open server private key\n";
+      mSunKey->ReadPrivKey(GetPrivKeyFile(mSaturnInfo->mLogin));
+    }
+    catch (Exc_t& exc)
+    {
+      std::cerr << _eh << "can not read server private key: " << exc << "\n";
       exit(1);
     }
-#else
-      std::cerr << _eh << "Gled built with disabled SSL support.\n";
-      exit(1);
-#endif
   }
 
   mSaturn = new Saturn;
@@ -954,9 +953,6 @@ void Gled::SpawnSaturn()
 
   CheckAuthDir();
 
-  // Initialize authentication
-#ifndef NOSSL
-  GKeyRSA::init_ssl();
   // Warn for missing RSA-key files
   if (GetPrivKeyFile(mSaturnInfo->mLogin, false) == 0)
   {
@@ -966,7 +962,6 @@ void Gled::SpawnSaturn()
   {
     ISwarn(_eh + "private key for default Eye identity not found.");
   }
-#endif
 
   mSaturn = new Saturn;
   try

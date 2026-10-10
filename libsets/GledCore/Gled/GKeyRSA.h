@@ -6,47 +6,36 @@
 #define GledCore_GKeyRSA_H
 
 #include <Gled/GledTypes.h>
-#include <Gled/GMutex.h>
+
+#include <vector>
 
 class TBuffer;
 
-typedef struct rsa_st RSA;
+typedef struct evp_pkey_st EVP_PKEY;
 
 namespace gled {
 
 class GKeyRSA {
 
-#ifndef NOSSL
-
-  friend class Gled;
-
 private:
-  static void init_ssl();
-  static bool init_done;
+  std::vector<unsigned char> mSecret;
 
-  static GMutex*       s_ssl_mutexen;
-  static void          ssl_locker_foo(int, int, const char*, int);
-  static unsigned long ssl_id_foo();
-
-  int			mSecretLen;
-  unsigned char*	mSecret;
+  void set_key(EVP_PKEY* key, bool priv);
 
 protected:
-
   Bool_t	bIsPrivate;	// X{G}
 
-  RSA*		pKey;
-
-  unsigned long mSslError;
-  bool          check_error();
-  const char*   error_string();
+  EVP_PKEY*	pKey;
 
 public:
   GKeyRSA();
+  GKeyRSA(const GKeyRSA&) = delete;
+  GKeyRSA& operator=(const GKeyRSA&) = delete;
   virtual ~GKeyRSA();
 
   void ReadPubKey(const char* file);
   void ReadPrivKey(const char* file);
+  void ShareKey(const GKeyRSA& k);
 
   void GenerateSecret();
   void SendSecret(TBuffer& b);
@@ -57,13 +46,6 @@ public:
 
 #include "GKeyRSA.h7"
 
-#else
-
-public:
-  virtual ~GKeyRSA() {}
-
-#endif
-  
   ClassDef(GKeyRSA, 0);
 }; // endclass GKeyRSA
 

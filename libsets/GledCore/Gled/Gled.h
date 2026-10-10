@@ -30,6 +30,7 @@ class ZMIR;
 
 class GCondition;
 class GThread;
+class GKeyRSA;
 
 
 class Gled
@@ -43,6 +44,7 @@ protected:
   SaturnInfo*	mSaturnInfo;	// X{g}
   Saturn*     mSaturn;	// X{g}
   Bool_t      bIsSun;		// X{G}
+  GKeyRSA*    mSunKey;	// X{g}
 
   Bool_t	bQuit;		// X{G}
   Bool_t	bHasPrompt;	// X{G}

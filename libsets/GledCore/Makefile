@@ -13,7 +13,7 @@ DICT_DIRS	= Glasses Stones Gled Ephra
 VIEW_DIRS	= GledView FL
 VIEW_FL_DIRS	= FL
 
-BASE_LD_LIBS	= ${ROOT_LD_DIR} -lHist -lRIO -lNet -lMatrix -lssl
+BASE_LD_LIBS	= ${ROOT_LD_DIR} -lHist -lRIO -lNet -lMatrix -lcrypto
 
 MAINSRCS := saturn.cxx gled.cxx
 MAINOBJS := $(MAINSRCS:.cxx=.o)
@@ -27,10 +27,6 @@ PUPILS_OBJS    := $(addsuffix .o ,$(basename ${PUPILS_SRCS}))
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_base.inc
 #--------------------------------------------------------------
-
-ifdef NOSSL
-  CPPFLAGS += -DNOSSL
-endif
 
 # The main programs get header dependencies and clean like the libraries do.
 ALL_SRCS += ${MAINSRCS}

@@ -27,9 +27,7 @@
 #include <Ephra/Saturn.h>
 #include <Gled/GledNS.h>
 #include <Gled/Gled.h>
-#ifndef NOSSL
 #include <Gled/GKeyRSA.h>
-#endif
 
 #include "TSocket.h"
 
@@ -244,7 +242,6 @@ void ZSunQueen::handle_mee_connection(ZMirEmittingEntity* mee, TSocket* socket)
   {
     if (mSaturn->GetAllowMoons() == false)
     {
-      printf("type = %s\n", typeid(_eh + "frek").name());
       throw _eh + "Saturn is not accepting moon connections.";
     }
     mir_ptr = S_initiate_saturn_connection();
@@ -271,7 +268,11 @@ void ZSunQueen::handle_mee_connection(ZMirEmittingEntity* mee, TSocket* socket)
   ConnReqResult_e crr = (ConnReqResult_e)crr_buf;
 
   if (crr == CRR_Denied)
-    throw _eh + "connection denied.";
+  {
+    TString reason;
+    reason.Streamer(*ret);
+    throw _eh + reason;
+  }
 
   ID_t mee_id;
 
@@ -368,6 +369,7 @@ void ZSunQueen::initiate_mee_connection()
   if (mee == 0)
     throw _eh + "did not receive a lens of glass ZMirEmittingEntity";
 
+  TString deny;
   bool use_auth = mSunInfo->GetUseAuth();
   if (use_auth && mee->mLogin == "guest")
   {
@@ -376,7 +378,7 @@ void ZSunQueen::initiate_mee_connection()
       if (mSaturnGuestId != 0) {
 	mee->mLogin = mSaturnGuestId->mName;
       } else {
-	throw _eh + "not accepting guest Saturns";
+	deny = "not accepting guest Saturns";
       }
     }
     else if (GledNS::IsA(mee, EyeInfo::FID()))
@@ -384,32 +386,35 @@ void ZSunQueen::initiate_mee_connection()
       if (mEyeGuestId != 0) {
 	mee->mLogin = mEyeGuestId->mName;
       } else {
-	throw _eh + "not accepting guest Eyes";
+	deny = "not accepting guest Eyes";
       }
     }
     else
     {
+      delete mee;
       throw _eh + "unknown type of MEE";
     }
     use_auth = false;
   }
-
-  if (use_auth)
+  else if (use_auth && Gled::theOne->GetPubKeyFile(mee->mLogin, false) == 0)
   {
-    try
-    {
-      Gled::theOne->GetPubKeyFile(mee->mLogin);
-    }
-    catch(Exc_t& exc)
-    {
-      throw _eh + "unknown identity (" + exc + ")"; // !!!! should deny below
-    }
+    deny = "unknown identity '" + mee->mLogin + "'";
+  }
+
+  TBufferFile ret(TBuffer::kWrite);
+  if ( ! deny.IsNull())
+  {
+    ISmess(_eh + "denied: " + deny);
+    delete mee;
+    ret << (UChar_t)CRR_Denied;
+    deny.Streamer(ret);
+    mSaturn->ShootMIRResult(ret);
+    return;
   }
 
   NCMData* ncmd = new NCMData(mee, req);
   UInt_t cid = mNCMasterData.insert(ncmd);
 
-  TBufferFile ret(TBuffer::kWrite);
   if (use_auth)
   {
     ret << (UChar_t)CRR_ReqAuth;
@@ -430,8 +435,6 @@ void ZSunQueen::handle_mee_authentication(UInt_t conn_id, TSocket* socket)
   static const Exc_t _eh("ZSunQueen::handle_mee_authentication ");
   TString err;
 
-#ifndef NOSSL
-
   NCMData* ncmd = mNCMasterData.retrieve(conn_id);
   if(ncmd == 0) {
     throw _eh + "unknown conn_id";
@@ -439,9 +442,10 @@ void ZSunQueen::handle_mee_authentication(UInt_t conn_id, TSocket* socket)
   GKeyRSA sun, mee;
   try {
     mee.ReadPubKey(Gled::theOne->GetPubKeyFile(ncmd->fNewMEE->mLogin));
-    sun.ReadPrivKey(Gled::theOne->GetPrivKeyFile(mSunInfo->mLogin));
-    // !!!! get saturn identity from somewhere else
-    // !!!! should assert key of mee equal or longer from sun key
+    GKeyRSA* sun_key = Gled::theOne->GetSunKey();
+    if (sun_key == 0)
+      throw _eh + "sun key not loaded";
+    sun.ShareKey(*sun_key);
     mee.GenerateSecret();
   }
   catch(Exc_t& exc) {
@@ -487,12 +491,6 @@ void ZSunQueen::handle_mee_authentication(UInt_t conn_id, TSocket* socket)
     mNCMasterData.remove(conn_id);
     throw _eh + err;
   }
-
-#else
-  
-  throw _eh + "Gled built with disabled SSL support.";
-
-#endif
 }
 
 /**************************************************************************/
@@ -728,8 +726,6 @@ void ZSunQueen::HandleClientSideAuthentication(TSocket* socket, UInt_t conn_id,
 {
   static const Exc_t _eh("ZSunQueen::HandleClientSideAuthentication ");
 
-#ifndef NOSSL
-
   {
     TMessage m(GledNS::MT_MEE_Authenticate);
     m << conn_id;
@@ -761,11 +757,4 @@ void ZSunQueen::HandleClientSideAuthentication(TSocket* socket, UInt_t conn_id,
     key.SendSecret(r);
     socket->Send(r);
   }
-
-#else
-
-  throw _eh + "Gled built with disabled SSL support.";
-  exit(1);
-  
-#endif
 }

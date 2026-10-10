@@ -16,6 +16,7 @@ build and the class checksums while corrupting the heap. Run, in this order:
 4. `demos/run_demos.sh` — the demos, including how they shut down.
 5. `cluster/run_cluster.py` — when MIR routing, Saturn or queen code changed.
 6. `signals/` — when signal handling, start-up or shutdown changed.
+7. `auth/run_auth.sh` — when authentication or `GKeyRSA` changed.
 
 Everything needs the gled environment (`source build_env.sh`, which sets
 `GLEDSYS`). Tests that start `gled` open windows and need `DISPLAY`; an
@@ -147,3 +148,17 @@ signals/ctrlc_pty.py out.txt 'loop start' --logflush startup_loop.C
 
 Expected: `*** Break *** keyboard interrupt`, no "loop end", the prompt, and
 exit status 0 after `.q`.
+
+## auth/
+
+```sh
+auth/run_auth.sh <outdir> [<port>]
+```
+
+Makes key pairs with `gled-auth-init` in `<outdir>`, starts a sun with
+`--auth` on `<port>` (default 9161) and connects a `saturn` to it,
+five times: with matching keys, with a 1024-bit sun key and 2048-bit client
+keys, with a client private key that does not match its public key, with an
+identity the sun does not know and as a guest. The first two must connect
+and the others must be denied, with the reason in the client's log. Takes
+about 50 s; the exit status is the number of failures.
