@@ -31,28 +31,18 @@ using namespace gled;
 
 namespace
 {
-  double edge_angle(const gts::Geometrium& g, gts::FaceId t, gts::EdgeId e)
+  const double r60 = 60*TMath::DegToRad();
+
+  // The angle at the vertex of t opposite e, or -1 if t has none.
+  double opposite_angle(const gts::Geometrium& g, gts::FaceId t, gts::EdgeId e)
   {
-    static const double r60 = 60*TMath::DegToRad();
-
     gts::VertexId v = g.opposite_vertex(t, e);
-    if (v.valid())
-    {
-      const gts::Vec3 p = g.vertex(v).p;
-      const gts::Vec3 a = g.vertex(g.edge(e).v[0]).p - p;
-      const gts::Vec3 b = g.vertex(g.edge(e).v[1]).p - p;
-      const gts::Vec3 c = gts::cross(a, b);
-
-      double phi = atan2(gts::norm(c), gts::dot(a, b));
-      if (phi <= r60)
-	return phi / r60;
-      else
-	return 1.5 - 0.5 * phi / r60;
-    }
-    else
-    {
-      return 1.0;
-    }
+    if ( ! v.valid())
+      return -1;
+    const gts::Vec3 p = g.vertex(v).p;
+    const gts::Vec3 a = g.vertex(g.edge(e).v[0]).p - p;
+    const gts::Vec3 b = g.vertex(g.edge(e).v[1]).p - p;
+    return atan2(gts::norm(gts::cross(a, b)), gts::dot(a, b));
   }
 
   double cost_angle(const gts::Geometrium& g, gts::EdgeId e)
@@ -66,10 +56,13 @@ namespace
     double cost = 1.0;
     for (gts::FaceId t : g.faces_of(e))
     {
-      cost = TMath::Min(edge_angle(g, t, e), cost);
+      const double phi = opposite_angle(g, t, e);
+      if (phi >= 0)
+        cost = TMath::Min(phi <= r60 ? phi / r60 : 1.5 - 0.5 * phi / r60, cost);
     }
     return cost;
   }
+
 }
 
 /**************************************************************************/
@@ -195,15 +188,22 @@ void GTSRetriangulator::Refine()
   switch (mCostOpts)
   {
     case CO_Length:
-      stop_cost = stop_cost * stop_cost; // edge-length uses square edge length.
+      stop_cost = - stop_cost * stop_cost; // refine's length cost is -length^2.
       break;
     case CO_Volume:
       l_cost_func = [l_vo_params](const gts::Geometrium& g, gts::EdgeId e)
         { return gts::volume_optimized_cost(g, e, l_vo_params); };
       break;
     case CO_Angle:
-      l_cost_func = cost_angle;
+    {
+      // Only the edges the surface had are costed; new ones cost 1. A split
+      // leaves an angle of at least 90deg at the midpoint, so splitting by
+      // the angles of new edges would never end.
+      const std::size_t first_new = s->geo().edge_capacity();
+      l_cost_func = [first_new](const gts::Geometrium& g, gts::EdgeId e)
+        { return e.i < first_new ? cost_angle(g, e) : 1.0; };
       break;
+    }
     default:
       throw _eh + "Unknown CostOpts.";
   }
@@ -218,7 +218,8 @@ void GTSRetriangulator::Refine()
       break;
     }
     case SO_Cost:
-      l_stop_func = [stop_cost](double cost, std::size_t) { return cost < stop_cost; };
+      // Edges come cheapest first; stop when the cheapest exceeds the limit.
+      l_stop_func = [stop_cost](double cost, std::size_t) { return cost > stop_cost; };
       break;
     default:
       throw _eh + "Unknown StopOpts.";
