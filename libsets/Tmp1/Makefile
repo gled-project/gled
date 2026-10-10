@@ -14,10 +14,6 @@ VIEW_DIRS	:=
 # files from /*.fl are processed by fluid
 VIEW_FL_DIRS	:=
 
-LIBSET_CPPFLAGS = $(shell pkg-config --cflags glib-2.0)
-BASE_LD_LIBS = $(shell pkg-config --libs   glib-2.0) -lgts
-
-
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_base.inc
 #--------------------------------------------------------------

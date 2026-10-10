@@ -9,45 +9,46 @@
 #include "Gled/GledTypes.h"
 #include "GTS.h"
 
+#include <set>
+
 namespace gled {
 
 class GTSurf;
 
 namespace GTS
 {
-  struct BoolOpHelperImpl;
-
+  // Copies of a and b, their intersection, the pieces and the result all
+  // live in one Geometrium, which TakeResult() hands over.
   class BoolOpHelper
   {
-    GTSurf          *target;
-    GtsSurface      *a_surf;
-    GtsSurface      *b_surf;
-    GtsSurfaceInter *inter;
-    GtsSurface      *result;
-    double           eps_a, eps_p, eps_l;
+    GTSurf                             *target;
+    std::unique_ptr<gts::Geometrium>    geo;
+    gts::Surface                       *a_surf;
+    gts::Surface                       *b_surf;
+    gts::Surface                       *result;
+    std::unique_ptr<gts::SurfaceInter>  inter;
+    double                              eps_a, eps_p, eps_l;
 
-    int              debug; // not used yet
+    int                                 debug; // not used yet
 
-    std::unique_ptr<BoolOpHelperImpl> impl;
+    std::set<gts::EdgeId>               edge_set;
+
+    gts::Surface* import(GTSurf* src, const Exc_t& _eh, const char* which);
+    gts::FaceId   other_face(gts::EdgeId e, gts::FaceId t) const;
 
     // ----------------------------------------------------------------
     // epsi triangles -- area < eps_a, perimeter < eps_p
 
-    bool is_epsi(GtsTriangle *t);
+    bool is_epsi(gts::FaceId t) const;
 
     void collapse_adjacent_epsi_triangles();
-
-    static void epsi_select     (GtsFace* f, BoolOpHelper* boh);
-    static void epsi_pair_select(GtsFace* f, BoolOpHelper* boh);
 
     // ----------------------------------------------------------------
     // zeta - triangles -- area < eps_a, perimeter >= eps_p
 
-    bool is_zeta(GtsTriangle *t);
+    bool is_zeta(gts::FaceId t) const;
 
     void handle_zeta_triangles();
-
-    static void zeta_select(GtsFace* f, BoolOpHelper* boh);
 
   public:
 
@@ -55,7 +56,7 @@ namespace GTS
     ~BoolOpHelper();
 
     void set_debug(int d) { debug = d; }
-    
+
     void BuildInter(const Exc_t& _eh);
 
     void PostProcess();
@@ -65,7 +66,7 @@ namespace GTS
     void MakeIntersection();
     void MakeDifference();
 
-    GtsSurface* TakeResult();
+    Mesh* TakeResult();
   };
 
 }

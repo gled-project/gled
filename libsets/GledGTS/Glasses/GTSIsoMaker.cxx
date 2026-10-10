@@ -57,45 +57,6 @@ void GTSIsoMaker::SetZAxis(Double_t min, Double_t max, UInt_t div)
 
 /**************************************************************************/
 
-namespace
-{
-  void form_to_plane(gdouble **a, GtsCartesianGrid g,
-		     guint i, gpointer data)
-  {
-    Double_t z = g.z;
-    // printf("form_to_plane called w/ i=%d => z=%lf\n", i, z);
-    TF3& formula = *((TF3*)data);
-
-    Double_t x = g.x;
-    for(unsigned int nx=0; nx<g.nx; ++nx) {
-      Double_t y = g.y;
-      for(unsigned int ny=0; ny<g.ny; ++ny) {
-	a[nx][ny] = formula.Eval(x, y, z);
-	y += g.dy;
-      }
-      x += g.dx;
-    }
-  }
-
-  void functor_to_plane(gdouble **a, GtsCartesianGrid g,
-			guint i, gpointer data)
-  {
-    Double_t z = g.z;
-    // printf("form_to_plane called w/ i=%d => z=%lf\n", i, z);
-    GTSIsoMakerFunctor &functor = *((GTSIsoMakerFunctor*)data);
-
-    Double_t x = g.x;
-    for(unsigned int nx=0; nx<g.nx; ++nx) {
-      Double_t y = g.y;
-      for(unsigned int ny=0; ny<g.ny; ++ny) {
-	a[nx][ny] = functor.GTSIsoFunc(x, y, z);
-	y += g.dy;
-      }
-      x += g.dx;
-    }
-  }
-}
-
 void GTSIsoMaker::MakeSurface()
 {
   static const Exc_t _eh("GTSIsoMaker::MakeSurface ");
@@ -106,8 +67,7 @@ void GTSIsoMaker::MakeSurface()
     throw _eh + "Link Target should be set.";
   }
 
-  gpointer            user_data = 0;
-  GtsIsoCartesianFunc user_func = 0;
+  gts::PlaneFunc user_func;
 
   GTSIsoMakerFunctor *functor = dynamic_cast<GTSIsoMakerFunctor*>(*mFunctor);
   TF3                *formula = 0;
@@ -119,41 +79,49 @@ void GTSIsoMaker::MakeSurface()
 
   if (functor)
   {
-    user_data = functor;
-    user_func = functor_to_plane;
+    user_func = gts::sample([functor](gts::Vec3 p) { return functor->GTSIsoFunc(p.x, p.y, p.z); });
     functor->GTSIsoBegin(this, mValue);
   }
   else
   {
     formula = new TF3("", mFormula);
     formula->SetRange(mXmin, mXmax, mYmin, mYmax, mZmin, mZmax);
-    user_data = formula;
-    user_func = form_to_plane;
+    user_func = gts::sample([formula](gts::Vec3 p) { return formula->Eval(p.x, p.y, p.z); });
   }
 
-  GtsCartesianGrid grid = {
+  gts::CartesianGrid grid = {
     mXdiv + 1, mYdiv + 1, mZdiv + 1,
     mXmin, (mXmax - mXmin) / mXdiv,
     mYmin, (mYmax - mYmin) / mYdiv,
     mZmin, (mZmax - mZmin) / mZdiv
   };
 
-  GtsSurface* s = MakeDefaultSurface();
+  auto m = std::make_unique<GTS::Mesh>();
+  gts::Surface& s = m->surf();
 
-  switch (mAlgo)
+  try
   {
-  case A_Cartesian:
-    gts_isosurface_cartesian(s, grid, user_func, user_data, mValue);
-    break;
-  case A_Tetra:
-    gts_isosurface_tetra(s, grid, user_func, user_data, mValue);
-    break;
-  case A_TetraBounded:
-    gts_isosurface_tetra_bounded(s, grid, user_func, user_data, mValue);
-    break;
-  case A_TetraBCL:
-    gts_isosurface_tetra_bcl(s, grid, user_func, user_data, mValue);
-    break;
+    switch (mAlgo)
+    {
+    case A_Cartesian:
+      gts::isosurface_cartesian(s, grid, user_func, mValue);
+      break;
+    case A_Tetra:
+      gts::isosurface_tetra(s, grid, user_func, mValue);
+      break;
+    case A_TetraBounded:
+      gts::isosurface_tetra_bounded(s, grid, user_func, mValue);
+      break;
+    case A_TetraBCL:
+      gts::isosurface_tetra_bcl(s, grid, user_func, mValue);
+      break;
+    }
+  }
+  catch (const std::exception& e)
+  {
+    if (functor) functor->GTSIsoEnd();
+    delete formula;
+    throw _eh + e.what();
   }
 
   if (functor)
@@ -172,7 +140,7 @@ void GTSIsoMaker::MakeSurface()
   }
 
   target->WriteLock();
-  target->ReplaceSurface(s);
+  target->ReplaceSurface(m.release());
   target->WriteUnlock();
 }
 
@@ -191,9 +159,9 @@ namespace
     {}
   };
 
-  void vertex_iso_comparator(GtsVertex* v, iso_compare_arg* arg)
+  void vertex_iso_comparator(const gts::Vec3& p, iso_compare_arg* arg)
   {
-    arg->histo->Fill(arg->functor->GTSIsoFunc(v->p.x, v->p.y, v->p.z) - arg->iso_value);
+    arg->histo->Fill(arg->functor->GTSIsoFunc(p.x, p.y, p.z) - arg->iso_value);
   }
 }
 
@@ -209,8 +177,8 @@ void GTSIsoMaker::MakeIsoDistanceHisto(const TString& canvas_name,
   if (target == 0)
     throw _eh + "Link Target should be set.";
 
-  GtsSurface *surf = target->GetSurf();
-  if (surf == 0)
+  GTS::Mesh *mesh = target->GetMesh();
+  if (mesh == 0)
     throw _eh + "Target must have non-null surface.";
 
   GTSIsoMakerFunctor *functor = dynamic_cast<GTSIsoMakerFunctor*>(*mFunctor);
@@ -223,7 +191,8 @@ void GTSIsoMaker::MakeIsoDistanceHisto(const TString& canvas_name,
   iso_compare_arg arg(functor, h, mValue);
   
   functor->GTSIsoBegin(this, mValue);
-  gts_surface_foreach_vertex(surf, (GtsFunc) vertex_iso_comparator, &arg);
+  for (gts::VertexId v : mesh->surf().vertices())
+    vertex_iso_comparator(mesh->geo().vertex(v).p, &arg);
   functor->GTSIsoEnd();
 
   TCanvas *canvas = XTReqCanvas::Request(canvas_name, canvas_title);
@@ -249,20 +218,20 @@ namespace
     {}
   };
 
-  void vertex_iso_fixer(GtsVertex* v, iso_fix_arg* arg)
+  void vertex_iso_fixer(gts::Vec3& p, iso_fix_arg* arg)
   {
     HPointD  g;
     Double_t f, d, k;
     Int_t N = 0;
     do
     {
-      f = arg->functor->GTSIsoGradient(v->p.x, v->p.y, v->p.z, g);
+      f = arg->functor->GTSIsoGradient(p.x, p.y, p.z, g);
       d = (arg->iso_value - f);
       k = d / g.Mag2();
 
-      v->p.x += k * g.x;
-      v->p.y += k * g.y;
-      v->p.z += k * g.z;
+      p.x += k * g.x;
+      p.y += k * g.y;
+      p.z += k * g.z;
     }
     while (TMath::Abs(d) > arg->iso_epsilon && ++N < arg->max_iter);
 
@@ -280,8 +249,8 @@ void GTSIsoMaker::MovePointsOntoIsoSurface()
   if (target == 0)
     throw _eh + "Link Target should be set.";
 
-  GtsSurface *surf = target->GetSurf();
-  if (surf == 0)
+  GTS::Mesh *mesh = target->GetMesh();
+  if (mesh == 0)
     throw _eh + "Target must have non-null surface.";
 
   GTSIsoMakerFunctor *functor = dynamic_cast<GTSIsoMakerFunctor*>(*mFunctor);
@@ -292,7 +261,8 @@ void GTSIsoMaker::MovePointsOntoIsoSurface()
   iso_fix_arg arg(functor, mValue, mFixPointEpsilon, mFixPointMaxIter);
   
   functor->GTSIsoBegin(this, mValue);
-  gts_surface_foreach_vertex(surf, (GtsFunc) vertex_iso_fixer, &arg);
+  for (gts::VertexId v : mesh->surf().vertices())
+    vertex_iso_fixer(mesh->geo().position(v), &arg);
   functor->GTSIsoEnd();
 
   if (arg.n_fail)

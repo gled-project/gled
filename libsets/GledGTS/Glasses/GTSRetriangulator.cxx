@@ -31,19 +31,19 @@ using namespace gled;
 
 namespace
 {
-  gdouble edge_angle(GtsTriangle* t, GtsEdge* e)
+  double edge_angle(const gts::Geometrium& g, gts::FaceId t, gts::EdgeId e)
   {
-    static const gdouble r60 = 60*TMath::DegToRad();
+    static const double r60 = 60*TMath::DegToRad();
 
-    GtsVertex *v = gts_triangle_vertex_opposite(t, e);
-    if (v)
+    gts::VertexId v = g.opposite_vertex(t, e);
+    if (v.valid())
     {
-      GtsVector a, b, c;
-      gts_vector_init(a, &v->p, &e->segment.v1->p);
-      gts_vector_init(b, &v->p, &e->segment.v2->p);
-      gts_vector_cross(c, a, b);
+      const gts::Vec3 p = g.vertex(v).p;
+      const gts::Vec3 a = g.vertex(g.edge(e).v[0]).p - p;
+      const gts::Vec3 b = g.vertex(g.edge(e).v[1]).p - p;
+      const gts::Vec3 c = gts::cross(a, b);
 
-      gdouble phi = atan2(gts_vector_norm(c), gts_vector_scalar(a, b));
+      double phi = atan2(gts::norm(c), gts::dot(a, b));
       if (phi <= r60)
 	return phi / r60;
       else
@@ -55,7 +55,7 @@ namespace
     }
   }
 
-  gdouble cost_angle (GtsEdge* e)
+  double cost_angle(const gts::Geometrium& g, gts::EdgeId e)
   {
     // Returns smallest cost of all triangles e is in, where cost for each
     // triangle is:
@@ -63,28 +63,12 @@ namespace
     //   goes linearly to 0 as the angle falls (rises) to 0deg (180deg).
     // Works well for cost up 0.5, then becomes unstable.
 
-    gdouble cost = 1.0;
-    GSList *i = e->triangles;
-    while (i)
+    double cost = 1.0;
+    for (gts::FaceId t : g.faces_of(e))
     {
-      cost = TMath::Min(edge_angle((GtsTriangle*) i->data, e), cost);
-      i = i->next;
+      cost = TMath::Min(edge_angle(g, t, e), cost);
     }
     return cost;
-  }
-
-  gboolean refine_stop_number (gdouble cost, guint number, guint * max)
-  {
-    if (number > *max)
-      return TRUE;
-    return FALSE;
-  }
-
-  gboolean refine_stop_cost (gdouble cost, guint number, gdouble * min)
-  {
-    if (cost < *min)
-      return TRUE;
-    return FALSE;
   }
 }
 
@@ -126,58 +110,53 @@ void GTSRetriangulator::Coarsen()
   GTSurf* target = *mTarget;
   if (target == 0)
     throw _eh + "Link Target should be set.";
-  GtsSurface* s = target->CopySurface();
-  if (s == 0)
+  std::unique_ptr<GTS::Mesh> s(target->CopySurface());
+  if ( ! s)
     throw _eh + "Target should have non-null surface.";
 
   double stop_cost = mStopCost;
 
-  GtsStopFunc l_stop_func = 0;
-  gpointer    l_stop_data = 0;
-  switch (mStopOpts)
-  {
-    case SO_Number:
-      l_stop_func = (GtsStopFunc) gts_coarsen_stop_number;
-      l_stop_data = &mStopNumber;
-      break;
-    case SO_Cost:
-      l_stop_func = (GtsStopFunc) gts_coarsen_stop_cost;
-      l_stop_data = &stop_cost;
-      break;
-    default:
-      throw _eh + "Unknown StopOpts.";
-  }
-
-  GtsVolumeOptimizedParams l_vo_params =
+  const gts::VolumeOptimizedParams l_vo_params =
     { mVO_VolumeWght, mVO_BoundaryWght, mVO_ShapeWght };
 
-  GtsKeyFunc  l_cost_func  = 0;
-  gpointer    l_cost_data  = 0;
+  gts::EdgeCost l_cost_func;
   switch (mCostOpts)
   {
     case CO_Length:
       stop_cost = stop_cost * stop_cost; // edge-length uses square edge length.
       break;
     case CO_Volume:
-      l_cost_func = (GtsKeyFunc) gts_volume_optimized_cost;
-      l_cost_data = &l_vo_params;
+      l_cost_func = [l_vo_params](const gts::Geometrium& g, gts::EdgeId e)
+        { return gts::volume_optimized_cost(g, e, l_vo_params); };
       break;
     case CO_Angle:
-      l_cost_func = (GtsKeyFunc) cost_angle;
+      l_cost_func = cost_angle;
       break;
     default:
       throw _eh + "Unknown CostOpts.";
   }
 
-  GtsCoarsenFunc l_coarsen_func = 0;
-  gpointer       l_coarsen_data = 0;
+  gts::CoarsenStop l_stop_func;
+  switch (mStopOpts)
+  {
+    case SO_Number:
+      l_stop_func = gts::stop_below_edges(mStopNumber);
+      break;
+    case SO_Cost:
+      l_stop_func = gts::stop_above_cost(stop_cost);
+      break;
+    default:
+      throw _eh + "Unknown StopOpts.";
+  }
+
+  gts::CollapsePosition l_coarsen_func;
   switch (mMidvertOpts)
   {
     case MO_Midvert:
       break;
     case MO_Volume:
-      l_coarsen_func = (GtsCoarsenFunc) gts_volume_optimized_vertex;
-      l_coarsen_data = &l_vo_params;
+      l_coarsen_func = [l_vo_params](const gts::Geometrium& g, gts::EdgeId e)
+        { return gts::volume_optimized_vertex(g, e, l_vo_params); };
       break;
     default:
       throw _eh + "Unknown MidvertOpts.";
@@ -186,15 +165,12 @@ void GTSRetriangulator::Coarsen()
   GTime* start_time = 0;
   if (bMeasureTime) start_time = new GTime(GTime::I_Now);
 
-  gts_surface_coarsen(s,
-		      l_cost_func, l_cost_data,
-		      l_coarsen_func, l_coarsen_data,
-		      l_stop_func, l_stop_data,
-		      mMinAngleDeg*TMath::DegToRad());
+  gts::coarsen(s->surf(), l_stop_func, l_cost_func, l_coarsen_func,
+               mMinAngleDeg*TMath::DegToRad());
 
   if (bMeasureTime) SetRunTime(start_time->TimeUntilNow().ToDouble());
 
-  target->ReplaceSurface(s);
+  target->ReplaceSurface(s.release());
 }
 
 /**************************************************************************/
@@ -206,85 +182,59 @@ void GTSRetriangulator::Refine()
   GTSurf* target = *mTarget;
   if (target == 0)
     throw _eh + "Link Target should be set.";
-  GtsSurface* s = target->CopySurface();
-  if (s == 0)
+  std::unique_ptr<GTS::Mesh> s(target->CopySurface());
+  if ( ! s)
     throw _eh + "Target should have non-null surface.";
 
   double stop_cost = mStopCost;
 
-  GtsStopFunc l_stop_func = 0;
-  gpointer    l_stop_data = 0;
-  switch(mStopOpts)
-  {
-    case SO_Number:
-      l_stop_func = (GtsStopFunc) refine_stop_number;
-      l_stop_data = &mStopNumber;
-      break;
-    case SO_Cost:
-      l_stop_func = (GtsStopFunc) refine_stop_cost;
-      l_stop_data = &stop_cost;
-      break;
-    default:
-      throw _eh + "Unknown StopOpts.";
-  }
-
-  GtsVolumeOptimizedParams l_vo_params =
+  const gts::VolumeOptimizedParams l_vo_params =
     { mVO_VolumeWght, mVO_BoundaryWght, mVO_ShapeWght };
 
-  GtsKeyFunc  l_cost_func  = 0;
-  gpointer    l_cost_data  = 0;
+  gts::EdgeCost l_cost_func;
   switch (mCostOpts)
   {
     case CO_Length:
       stop_cost = stop_cost * stop_cost; // edge-length uses square edge length.
       break;
     case CO_Volume:
-      l_cost_func = (GtsKeyFunc) gts_volume_optimized_cost;
-      l_cost_data = &l_vo_params;
+      l_cost_func = [l_vo_params](const gts::Geometrium& g, gts::EdgeId e)
+        { return gts::volume_optimized_cost(g, e, l_vo_params); };
       break;
     case CO_Angle:
-      l_cost_func = (GtsKeyFunc) cost_angle;
+      l_cost_func = cost_angle;
       break;
     default:
       throw _eh + "Unknown CostOpts.";
   }
 
+  gts::RefineStop l_stop_func;
+  switch(mStopOpts)
+  {
+    case SO_Number:
+    {
+      const std::size_t max = mStopNumber;
+      l_stop_func = [max](double, std::size_t number) { return number > max; };
+      break;
+    }
+    case SO_Cost:
+      l_stop_func = [stop_cost](double cost, std::size_t) { return cost < stop_cost; };
+      break;
+    default:
+      throw _eh + "Unknown StopOpts.";
+  }
+
   GTime* start_time = 0;
   if (bMeasureTime) start_time = new GTime(GTime::I_Now);
 
-  gts_surface_refine(s,
-		     l_cost_func, l_cost_data,
-		     0, 0,
-		     l_stop_func, l_stop_data);
+  gts::refine(s->surf(), l_stop_func, l_cost_func);
 
   if (bMeasureTime) SetRunTime(start_time->TimeUntilNow().ToDouble());
 
-  target->ReplaceSurface(s);
+  target->ReplaceSurface(s.release());
 }
 
 //==============================================================================
-
-namespace
-{
-  void bbox_vertex_foo(GtsVertex* v, GtsBBox* bbox)
-  {
-    GtsPoint &p = v->p;
-    GtsBBox  &b = *bbox;
-    if (p.x < b.x1) b.x1 = p.x;
-    if (p.x > b.x2) b.x2 = p.x;
-    if (p.y < b.y1) b.y1 = p.y;
-    if (p.y > b.y2) b.y2 = p.y;
-    if (p.z < b.z1) b.z1 = p.z;
-    if (p.z > b.z2) b.z2 = p.z;
-  }
-
-  void cluster_face_adder_foo(GtsFace* f, GtsClusterGrid* c_grid)
-  {
-    GtsVertex* vp[3];
-    gts_triangle_vertices(&f->triangle, &vp[0], &vp[1], &vp[2]);
-    gts_cluster_grid_add_triangle(c_grid, &vp[0]->p, &vp[1]->p, &vp[2]->p, NULL);
-  }
-}
 
 void GTSRetriangulator::OutOfCoreSimplification()
 {
@@ -293,38 +243,42 @@ void GTSRetriangulator::OutOfCoreSimplification()
   GTSurf* target = *mTarget;
   if (target == 0)
     throw _eh + "Link Target should be set.";
-  GtsSurface* s = target->CopySurface();
-  if (s == 0)
+  std::unique_ptr<GTS::Mesh> s(target->CopySurface());
+  if ( ! s)
     throw _eh + "Target should have non-null surface.";
 
   GTime* start_time = 0;
   if (bMeasureTime) start_time = new GTime(GTime::I_Now);
 
-  GtsSurface *d = MakeDefaultSurface();
+  auto d = std::make_unique<GTS::Mesh>();
 
-  const Double_t big = 1e100;
-  GtsBBox *bbox = gts_bbox_new(gts_bbox_class(), d, 0, 0, 0, 0, 0, 0);
-  bbox->x1 = bbox->y1 = bbox->z1 =  big;
-  bbox->x2 = bbox->y2 = bbox->z2 = -big;
-  gts_surface_foreach_vertex(s, (GtsFunc)bbox_vertex_foo, bbox);
+  gts::BBox bbox;
+  for (gts::VertexId v : s->surf().vertices())
+    bbox.add(s->geo().vertex(v).p);
 
-  printf("Boundingbox is (%f,%f,%f)-(%f,%f,%f)\n", bbox->x1, bbox->y1, bbox->z1, bbox->x2, bbox->y2, bbox->z2);
+  printf("Boundingbox is (%f,%f,%f)-(%f,%f,%f)\n", bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z);
 
-  GtsClusterGrid *c_grid = gts_cluster_grid_new(gts_cluster_grid_class(),
-						gts_cluster_class(), 
-						d, bbox, mOutOfCoreDelta);
-  gts_surface_foreach_face(s, (GtsFunc) cluster_face_adder_foo, c_grid);
-
-  GtsRange c_stats = gts_cluster_grid_update(c_grid);
-
-  gts_object_destroy(GTS_OBJECT(s));
-  gts_object_destroy(GTS_OBJECT(c_grid));
-  gts_object_destroy(GTS_OBJECT(bbox));
+  gts::Range c_stats;
+  try
+  {
+    gts::ClusterGrid c_grid(d->surf(), bbox, mOutOfCoreDelta);
+    for (gts::FaceId f : s->surf().faces())
+    {
+      const gts::Triangle t = s->geo().triangle(f);
+      c_grid.add_triangle(t.a, t.b, t.c);
+    }
+    c_stats = c_grid.update();
+  }
+  catch (const std::exception& e)
+  {
+    throw _eh + e.what();
+  }
+  s.reset();
 
   printf ("%d clusters of size: min: %g avg: %.1f|%.1f max: %g\n",
 	   c_stats.n, c_stats.min, c_stats.mean, c_stats.stddev, c_stats.max);
 
   if (bMeasureTime) SetRunTime(start_time->TimeUntilNow().ToDouble());
 
-  target->ReplaceSurface(d);
+  target->ReplaceSurface(d.release());
 }

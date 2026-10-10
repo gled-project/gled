@@ -5,6 +5,8 @@
 #include "GTSBoolOpHelper.h"
 #include "Glasses/GTSurf.h"
 
+#include <TMath.h>
+
 using namespace gled;
 
 
@@ -14,189 +16,60 @@ using namespace gled;
 namespace
 {
   //----------------------------------------------------------------------------
-  // Typedefs, structs for stl
-  //----------------------------------------------------------------------------
-
-  typedef std::pair<GtsTriangle*, GtsTriangle*> pTriTri_t;
-
-  struct tri_pair_hash
-  {
-    std::hash<size_t> hfoo;
-
-    size_t operator()(const pTriTri_t& a) const
-    {
-      return hfoo((size_t) a.first + (size_t) a.second);
-    }
-  };
-
-  struct tri_pair_any_equal
-  {
-    bool operator()(const pTriTri_t& a, const pTriTri_t& b) const
-    {
-      return (a.first == b.first  && a.second == b.second) ||
-	           (a.first == b.second && a.second == b.first);
-    }
-  };
-
-  typedef std::unordered_set<pTriTri_t, tri_pair_hash, tri_pair_any_equal> sppTriTri_t;
-  typedef sppTriTri_t::iterator                                            sppTriTri_i;
-
-  typedef std::set<GtsTriangle*>   spTri_t;
-  typedef spTri_t::iterator   spTri_i;
-
-  typedef std::set<GtsEdge*>       spEdge_t;
-  typedef spEdge_t::iterator  spEdge_i;
-
-  //----------------------------------------------------------------------------
   // General utilities
   //----------------------------------------------------------------------------
 
-  double edge_len(GtsEdge* e)
+  double edge_len(const gts::Geometrium& g, gts::EdgeId e)
   {
-    return gts_point_distance(&e->segment.v1->p, &e->segment.v2->p);
+    const gts::Segment s = g.segment(e);
+    return gts::distance(s.a, s.b);
   }
 
-  GtsEdge* longest_edge(GtsTriangle *t)
+  gts::EdgeId longest_edge(const gts::Geometrium& g, gts::FaceId t)
   {
-    double l1 = edge_len(t->e1);
-    double l2 = edge_len(t->e2);
-    double l3 = edge_len(t->e3);
+    const auto& e = g.face(t).e;
+    double l1 = edge_len(g, e[0]);
+    double l2 = edge_len(g, e[1]);
+    double l3 = edge_len(g, e[2]);
 
-    if (l1 >= l2 && l1 >= l3) return t->e1;
-    return (l2 >= l3) ? t->e2 : t->e3;
+    if (l1 >= l2 && l1 >= l3) return e[0];
+    return (l2 >= l3) ? e[1] : e[2];
   }
 
-  GtsEdge* shortest_edge(GtsTriangle *t)
+  gts::EdgeId shortest_edge(const gts::Geometrium& g, gts::FaceId t)
   {
-    double l1 = edge_len(t->e1);
-    double l2 = edge_len(t->e2);
-    double l3 = edge_len(t->e3);
+    const auto& e = g.face(t).e;
+    double l1 = edge_len(g, e[0]);
+    double l2 = edge_len(g, e[1]);
+    double l3 = edge_len(g, e[2]);
 
-    if (l1 <= l2 && l1 <= l3) return t->e1;
-    return (l2 <= l3) ? t->e2 : t->e3;
+    if (l1 <= l2 && l1 <= l3) return e[0];
+    return (l2 <= l3) ? e[1] : e[2];
   }
 
-  GtsTriangle* edge_other_triangle(GtsEdge* e, GtsTriangle* t)
+  // The middle of e, as 0.5 (a + b).
+  gts::Vec3 mid_point(const gts::Geometrium& g, gts::EdgeId e)
   {
-    assert(g_slist_length(e->triangles) == 2);
-    return (GtsTriangle*) (e->triangles->data == t ? e->triangles->next->data : e->triangles->data);
+    const gts::Segment s = g.segment(e);
+    return { 0.5*(s.a.x + s.b.x), 0.5*(s.a.y + s.b.y), 0.5*(s.a.z + s.b.z) };
   }
-
-  void triangle_other_edges(const GtsTriangle* t, const GtsEdge* e0,
-			    GtsEdge*& e1, GtsEdge*& e2)
-  {
-    if (t->e1 == e0) {
-      e1 = t->e2; e2 = t->e3;
-    } else {
-      e1 = t->e1; e2 = (t->e2 == e0) ? t->e3 : t->e2;
-    }
-  }
-
-  void remove_duplicate_edges(GSList* edges)
-  {
-    while (edges)
-    {
-      GtsEdge * e1 = (GtsEdge*) edges->data;
-      GtsEdge * duplicate;
-      while ((duplicate = gts_edge_is_duplicate(e1)))
-      {
-	gts_edge_replace(duplicate, GTS_EDGE(e1));
-	gts_object_destroy(GTS_OBJECT(duplicate));
-      }
-      edges = edges->next;
-    }
-  }
-
-  void edge_collapse(GtsEdge* e, bool print_p=false)
-  {
-    GtsVertex *v1  = e->segment.v1;
-    GtsVertex *v2  = e->segment.v2;
-    GtsVertex *mid = gts_vertex_new(gts_vertex_class(),
-				    0.5*(v1->p.x + v2->p.x),
-				    0.5*(v1->p.y + v2->p.y),
-				    0.5*(v1->p.z + v2->p.z));
-
-    if (print_p)
-      printf("  Collapse valid = %d, Creates fold = %d\n",
-	     gts_edge_collapse_is_valid(e),
-	     gts_edge_collapse_creates_fold(e, mid, 0.9));
-
-    gts_object_destroy(GTS_OBJECT(e));
-
-    gts_vertex_replace(v1, mid);
-    gts_vertex_replace(v2, mid);
-
-    gts_object_destroy(GTS_OBJECT(v1));
-    gts_object_destroy(GTS_OBJECT(v2));
-
-    remove_duplicate_edges(mid->segments);
-  }
-
 
   //----------------------------------------------------------------------------
   // Print / debug functions
   //----------------------------------------------------------------------------
 
-  void print_triangles(GSList* trings, const GtsTriangle* nt)
+  void print_triangles(const gts::Geometrium& g, gts::EdgeId e, gts::FaceId nt)
   {
     int i = 0;
-    while (trings)
+    for (gts::FaceId t : g.faces_of(e))
     {
-      GtsTriangle *t = (GtsTriangle*) trings->data;
-
-      printf("      %d. a=%g, p=%g, q=%g", ++i, gts_triangle_area(t), gts_triangle_perimeter(t), gts_triangle_quality(t));
+      printf("      %d. a=%g, p=%g, q=%g", ++i, g.area(t), g.perimeter(t), g.quality(t));
 
       if (t == nt)
 	printf(" *** ");
       printf("\n");
-      
-      trings = trings->next;
     }
   }
-
-  struct face_print_arg
-  {
-    double area_limit;
-    int    count;
-
-    face_print_arg(double al) : area_limit(al), count(0) {}
-  };
-
-  void face_print(GtsFace* f, face_print_arg* a)
-  {
-    ++(a->count);
-    GtsTriangle *t = &f->triangle;
-    if (gts_triangle_area(t) < a->area_limit)
-      printf("%3d. a=%22.18g, p=%22.18g, q=%22.18g\n", a->count,
-	     gts_triangle_area(t), gts_triangle_perimeter(t), gts_triangle_quality(t));
-  }
-
-  void print_triangles_smaller_than_area(GtsSurface* s, double area_limit=1e-10)
-  {
-    face_print_arg arg(area_limit);
-    gts_surface_foreach_face(s, (GtsFunc) face_print, &arg);
-  }
-
-  void print_neigbour_triangles_on_other_edges(const GtsTriangle* t, const GtsEdge* e0)
-  {
-    GtsEdge *e1, *e2;
-    triangle_other_edges(t, e0, e1, e2);
-    printf("   Other triangles for e1\n");
-    print_triangles(e1->triangles, t);
-    printf("   Other triangles for e2\n");
-    print_triangles(e2->triangles, t);
-  }
-
-}
-
-namespace gled::GTS
-{
-struct BoolOpHelperImpl
-{
-  sppTriTri_t  tripair_set;
-  spTri_t      tri_set;
-  spEdge_t     edge_set;
-};
 }
 
 //==============================================================================
@@ -205,46 +78,58 @@ struct BoolOpHelperImpl
 using namespace gled::GTS;
 
 BoolOpHelper::BoolOpHelper(GTSurf* tgt, GTSurf* a, GTSurf* b, const Exc_t& _eh) :
-  target(tgt), a_surf(0), b_surf(0), inter(0), result(0),
+  target(tgt), geo(std::make_unique<gts::Geometrium>()),
+  a_surf(0), b_surf(0), result(0),
   eps_a(0), eps_p(0), eps_l(0),
-  debug(1),
-  impl(new BoolOpHelperImpl)
+  debug(1)
 {
   if (a == b) throw _eh + "Same value of argument a and b.";
 
   if (a)
   {
-    a_surf = a->CopySurface();
-    if (a_surf == 0) throw _eh + "Argument a has null surface.";
-
-    if (a != target)
-    {
-      std::unique_ptr<ZTrans> from_a(ZNode::BtoA(target, a));
-      if (*from_a == 0) throw _eh + "No common parent with a.";
-      TransformSurfaceVertices(a_surf, from_a.get());
-    }
+    a_surf = import(a, _eh, "a");
   }
 
   if (b)
   {
-    b_surf = b->CopySurface();
-    if (b_surf == 0) throw _eh + "Argument b has null surface.";
-
-    if (b != target)
-    {
-      std::unique_ptr<ZTrans> from_b(ZNode::BtoA(target, b));
-      if (*from_b == 0) throw _eh + "No common parent with b.";
-      TransformSurfaceVertices(b_surf, from_b.get());
-    }
+    b_surf = import(b, _eh, "b");
   }
 }
 
 BoolOpHelper::~BoolOpHelper()
+{}
+
+gts::Surface* BoolOpHelper::import(GTSurf* src, const Exc_t& _eh, const char* which)
 {
-  if (a_surf) gts_object_destroy(GTS_OBJECT(a_surf));
-  if (b_surf) gts_object_destroy(GTS_OBJECT(b_surf));
-  if (inter)  gts_object_destroy(GTS_OBJECT(inter));
-  if (result) gts_object_destroy(GTS_OBJECT(result));
+  gts::Surface* s;
+  {
+    GLensReadHolder _lck(src);
+    Mesh* m = src->GetMesh();
+    if (m == 0) throw _eh + GForm("Argument %s has null surface.", which);
+    s = &geo->import(m->geo(), m->surf());
+  }
+
+  if (src != target)
+  {
+    std::unique_ptr<ZTrans> from(ZNode::BtoA(target, src));
+    if (*from == 0) throw _eh + GForm("No common parent with %s.", which);
+    TransformSurfaceVertices(*s, *from);
+  }
+  return s;
+}
+
+// The face of result other than t on e, when e has exactly two.
+gts::FaceId BoolOpHelper::other_face(gts::EdgeId e, gts::FaceId t) const
+{
+  gts::FaceId other;
+  int n = 0;
+  for (gts::FaceId f : geo->faces_of(e))
+  {
+    if ( ! result->contains(f)) continue;
+    ++n;
+    if (f != t) other = f;
+  }
+  return n == 2 ? other : gts::FaceId();
 }
 
 //------------------------------------------------------------------------------
@@ -269,9 +154,8 @@ void BoolOpHelper::BuildInter(const Exc_t& _eh)
     }
     case GTSurf::PBM_AsFractions:
     {
-      GtsSurfaceQualityStats a_stats, b_stats;
-      gts_surface_quality_stats(a_surf, &a_stats);
-      gts_surface_quality_stats(b_surf, &b_stats);
+      const gts::QualityStats a_stats = gts::quality_stats(*a_surf);
+      const gts::QualityStats b_stats = gts::quality_stats(*b_surf);
       Double_t ma = TMath::Min(a_stats.face_area.min, b_stats.face_area.min);
       Double_t ml = TMath::Min(a_stats.edge_length.min, b_stats.edge_length.min);
       Double_t mp = 3.0 * ml;
@@ -282,22 +166,18 @@ void BoolOpHelper::BuildInter(const Exc_t& _eh)
     }
   }
 
-  GNode *a_tree    = gts_bb_tree_surface(a_surf);
-  bool   a_is_open = gts_surface_volume(a_surf) < 0;
+  try
+  {
+    inter = std::make_unique<gts::SurfaceInter>(*a_surf, *b_surf);
+  }
+  catch (const std::exception& e)
+  {
+    throw _eh + e.what();
+  }
 
-  GNode *b_tree    = gts_bb_tree_surface(b_surf);
-  bool   b_is_open = gts_surface_volume(b_surf) < 0;
-
-  inter = gts_surface_inter_new(gts_surface_inter_class(),
-				a_surf, b_surf, a_tree, b_tree,
-				a_is_open, b_is_open);
-  gts_bb_tree_destroy(a_tree, true);
-  gts_bb_tree_destroy(b_tree, true);
-
-  gboolean orientable, closed;
-  orientable = gts_surface_inter_check(inter, &closed);
-  if (!orientable) throw _eh + "Intersection curve not orientable.";
-  if (!closed)     throw _eh + "Intersection curve not closed.";
+  const gts::SurfaceInter::Check check = inter->check();
+  if (!check.ok)     throw _eh + "Intersection curve not orientable.";
+  if (!check.closed) throw _eh + "Intersection curve not closed.";
 }
 
 //------------------------------------------------------------------------------
@@ -310,22 +190,23 @@ void BoolOpHelper::PostProcess()
       printf("BoolOpHelper::PostProcess Limits zero ... nothing to be done.\n");
     return;
   }
-  
+
   if (debug > 0)
     printf("BoolOpHelper::PostProcess Entering.\n");
 
-  if (a_surf) { gts_object_destroy(GTS_OBJECT(a_surf)); a_surf = 0; }
-  if (b_surf) { gts_object_destroy(GTS_OBJECT(b_surf)); b_surf = 0; }
-  if (inter)  { gts_object_destroy(GTS_OBJECT(inter));  inter  = 0; }
+  // Only the faces of the result remain.
+  inter.reset();
+  if (a_surf) { geo->remove_surface(*a_surf); a_surf = 0; }
+  if (b_surf) { geo->remove_surface(*b_surf); b_surf = 0; }
 
   collapse_adjacent_epsi_triangles();
 
   handle_zeta_triangles();
 
-  for (spEdge_i i = impl->edge_set.begin(); i != impl->edge_set.end(); ++i)
+  for (gts::EdgeId e : edge_set)
   {
-    if (edge_len(*i) < eps_l)
-      edge_collapse(*i);
+    if ( ! geo->dead(e) && edge_len(*geo, e) < eps_l)
+      geo->collapse_edge(e, mid_point(*geo, e));
   }
 
   if (debug > 0)
@@ -336,17 +217,17 @@ void BoolOpHelper::PostProcess()
 
 void BoolOpHelper::MakeMerge()
 {
-  result = MakeDefaultSurface();
-  gts_surface_merge(result, a_surf);
-  gts_surface_merge(result, b_surf);
+  result = &geo->new_surface();
+  if (a_surf) result->merge(*a_surf);
+  if (b_surf) result->merge(*b_surf);
 }
 
 void BoolOpHelper::MakeUnion()
 {
-  result = MakeDefaultSurface();
+  result = &geo->new_surface();
 
-  gts_surface_inter_boolean(inter, result, GTS_1_OUT_2);
-  gts_surface_inter_boolean(inter, result, GTS_2_OUT_1);
+  inter->boolean(*result, gts::BooleanOp::A_out_B);
+  inter->boolean(*result, gts::BooleanOp::B_out_A);
 
   if (target->GetPostBoolOp() != GTSurf::PBM_Noop)
     PostProcess();
@@ -354,10 +235,10 @@ void BoolOpHelper::MakeUnion()
 
 void BoolOpHelper::MakeIntersection()
 {
-  result = MakeDefaultSurface();
+  result = &geo->new_surface();
 
-  gts_surface_inter_boolean(inter, result, GTS_1_IN_2);
-  gts_surface_inter_boolean(inter, result, GTS_2_IN_1);
+  inter->boolean(*result, gts::BooleanOp::A_in_B);
+  inter->boolean(*result, gts::BooleanOp::B_in_A);
 
   if (target->GetPostBoolOp() != GTSurf::PBM_Noop)
     PostProcess();
@@ -365,12 +246,14 @@ void BoolOpHelper::MakeIntersection()
 
 void BoolOpHelper::MakeDifference()
 {
-  result = MakeDefaultSurface();
+  result = &geo->new_surface();
 
-  gts_surface_inter_boolean(inter, result, GTS_1_OUT_2);
-  gts_surface_inter_boolean(inter, result, GTS_2_IN_1);
-  gts_surface_foreach_face (inter->s2, (GtsFunc) gts_triangle_revert, 0);
-  gts_surface_foreach_face (b_surf,    (GtsFunc) gts_triangle_revert, 0);
+  inter->boolean(*result, gts::BooleanOp::A_out_B);
+  gts::Surface& b_in_a = geo->new_surface();
+  inter->boolean(b_in_a, gts::BooleanOp::B_in_A);
+  InvertSurface(b_in_a);
+  result->merge(b_in_a);
+  geo->remove_surface(b_in_a);
 
   if (target->GetPostBoolOp() != GTSurf::PBM_Noop)
     PostProcess();
@@ -378,9 +261,15 @@ void BoolOpHelper::MakeDifference()
 
 //------------------------------------------------------------------------------
 
-GtsSurface* BoolOpHelper::TakeResult()
+Mesh* BoolOpHelper::TakeResult()
 {
-  GtsSurface *ret = result;
+  if (result == 0) return 0;
+
+  inter.reset();
+  if (a_surf) { geo->remove_surface(*a_surf); a_surf = 0; }
+  if (b_surf) { geo->remove_surface(*b_surf); b_surf = 0; }
+
+  Mesh *ret = new Mesh(std::move(geo), *result);
   result = 0;
   return ret;
 }
@@ -395,95 +284,66 @@ GtsSurface* BoolOpHelper::TakeResult()
 // Collapse all edges into a single vertex.
 //----------------------------------------------------------------------------
 
-bool BoolOpHelper::is_epsi(GtsTriangle *t)
+bool BoolOpHelper::is_epsi(gts::FaceId t) const
 {
-  return gts_triangle_area(t) < eps_a && gts_triangle_perimeter(t) < eps_p;
-}
-
-void BoolOpHelper::epsi_select(GtsFace* f, BoolOpHelper* boh)
-{
-  GtsTriangle *t = &f->triangle;
-  if (boh->is_epsi(t))
-  {
-    boh->impl->tri_set.insert(t);
-  }
-}
-
-void BoolOpHelper::epsi_pair_select(GtsFace* f, BoolOpHelper* boh)
-{
-  GtsTriangle *t = &f->triangle;
-  if (boh->is_epsi(t))
-  {
-    GtsTriangle *ot;
-    if ((ot = edge_other_triangle(t->e1, t), boh->is_epsi(ot)) ||
-	(ot = edge_other_triangle(t->e2, t), boh->is_epsi(ot)) ||
-	(ot = edge_other_triangle(t->e3, t), boh->is_epsi(ot)))
-    {
-      boh->impl->tripair_set.insert(std::make_pair(t, ot));
-    }
-  }
+  return geo->area(t) < eps_a && geo->perimeter(t) < eps_p;
 }
 
 void BoolOpHelper::collapse_adjacent_epsi_triangles()
 {
-  sppTriTri_t& tripairs = impl->tripair_set;
+  const gts::Geometrium& g = *geo;
 
-  gts_surface_foreach_face(result, (GtsFunc) epsi_pair_select, this);
+  auto select = [&](std::set<std::pair<gts::FaceId, gts::FaceId>>& pairs, size_t& n_epsi) {
+    pairs.clear(); n_epsi = 0;
+    for (gts::FaceId t : result->faces())
+    {
+      if ( ! is_epsi(t)) continue;
+      ++n_epsi;
+      for (gts::EdgeId e : g.face(t).e)
+      {
+        const gts::FaceId ot = other_face(e, t);
+        if (ot.valid() && is_epsi(ot))
+        {
+          pairs.insert(std::minmax(t, ot));
+          break;
+        }
+      }
+    }
+  };
+
+  std::set<std::pair<gts::FaceId, gts::FaceId>> tripairs;
+  size_t n_epsi;
+  select(tripairs, n_epsi);
+
+  if (debug > 0)
+    printf("Begin epsi pair removal, Nepsi_pair=%zu, Nepsi=%zu\n", tripairs.size(), n_epsi);
+
+  // The two faces, and the faces across their other four edges, go; the four
+  // vertices become one at the middle of the common edge.
+  for (auto [t1, t2] : tripairs)
+  {
+    if ( ! result->contains(t1) || ! result->contains(t2)) continue;
+
+    const gts::EdgeId common_edge = g.common_edge(t1, t2);
+    if ( ! common_edge.valid()) continue;
+
+    const gts::Vec3     mid = mid_point(g, common_edge);
+    const gts::VertexId v3  = g.opposite_vertex(t1, common_edge);
+    const gts::VertexId v4  = g.opposite_vertex(t2, common_edge);
+
+    gts::VertexId m = geo->collapse_edge(common_edge, mid);
+    for (gts::VertexId v : { v3, v4 })
+    {
+      if ( ! m.valid() || g.dead(v)) continue;
+      const gts::EdgeId e = g.find_edge(m, v);
+      if (e.valid()) m = geo->collapse_edge(e, mid);
+    }
+  }
 
   if (debug > 0)
   {
-    gts_surface_foreach_face(result, (GtsFunc) epsi_select, this);
-    printf("Begin epsi pair removal, Nepsi_pair=%zu, Nepsi=%zu\n", tripairs.size(), impl->tri_set.size());
-    impl->tri_set.clear();
-  }
-
-  while ( ! tripairs.empty())
-  {
-    GtsTriangle *t1 = tripairs.begin()->first, *t2 = tripairs.begin()->second;
-
-    GtsEdge *common_edge = gts_triangles_common_edge(t1, t2);
-    GtsVertex *v1 = common_edge->segment.v1, *v2 = common_edge->segment.v2;
-    GtsVertex *mid = gts_vertex_new(gts_vertex_class(),
-				    0.5*(v1->p.x + v2->p.x),
-				    0.5*(v1->p.y + v2->p.y),
-				    0.5*(v1->p.z + v2->p.z));
-
-    GtsVertex *vts[4] = { v1, v2,
-			  gts_triangle_vertex_opposite(t1, common_edge),
-			  gts_triangle_vertex_opposite(t2, common_edge) };
-
-    GtsEdge *egs[5] = { common_edge,
-			gts_triangle_edge_opposite(t1, v1),
-			gts_triangle_edge_opposite(t1, v2),
-			gts_triangle_edge_opposite(t2, v1),
-			gts_triangle_edge_opposite(t2, v2) };
-
-    gts_allow_floating_vertices = gts_allow_floating_edges = true;
-
-    for (int i = 0; i < 5; ++i)
-    {
-      gts_object_destroy(GTS_OBJECT(egs[i]));
-    }
-    for (int i = 0; i < 4; ++i)
-    {
-      gts_vertex_replace(vts[i], mid);
-      gts_object_destroy(GTS_OBJECT(vts[i]));
-    }
-
-    gts_allow_floating_vertices = gts_allow_floating_edges = false;
-
-    remove_duplicate_edges(mid->segments);
-
-    tripairs.erase(tripairs.begin());
-  }
-
-  if (debug > 0)
-  {
-    gts_surface_foreach_face(result, (GtsFunc) epsi_pair_select, this);
-    gts_surface_foreach_face(result, (GtsFunc) epsi_select, this);
-    printf("End epsi pair removal, Nepsi_pair=%zu, Nepsi=%zu\n", tripairs.size(), impl->tri_set.size());
-    tripairs.clear();
-    impl->tri_set.clear();
+    select(tripairs, n_epsi);
+    printf("End epsi pair removal, Nepsi_pair=%zu, Nepsi=%zu\n", tripairs.size(), n_epsi);
   }
 }
 
@@ -491,31 +351,24 @@ void BoolOpHelper::collapse_adjacent_epsi_triangles()
 //----------------------------------------------------------------------------
 // Handling of triangles with area ~ 0, perimeter > eps.
 // First check shortest edge -> if length < eps, collapse shortest edge.
-// Otherwise replace longest edge so that it connects the vertices
-// opposite to the longest edge.
+// Otherwise swap the longest edge so that it connects the vertices
+// opposite to it.
 //----------------------------------------------------------------------------
 
-bool BoolOpHelper::is_zeta(GtsTriangle *t)
+bool BoolOpHelper::is_zeta(gts::FaceId t) const
 {
-  return gts_triangle_area(t) < eps_a && gts_triangle_perimeter(t) >= eps_p;
-}
-
-void BoolOpHelper::zeta_select(GtsFace* f, BoolOpHelper* boh)
-{
-  GtsTriangle *t = &f->triangle;
-  if (boh->is_zeta(t))
-  {
-    boh->impl->tri_set.insert(t);
-  }
+  return geo->area(t) < eps_a && geo->perimeter(t) >= eps_p;
 }
 
 void BoolOpHelper::handle_zeta_triangles()
 {
-  int n_collapsed = 0, n_reconnected = 0;
+  int n_collapsed = 0, n_reconnected = 0, n_failed = 0;
 
-  spTri_t &tset = impl->tri_set;
+  const gts::Geometrium& g = *geo;
 
-  gts_surface_foreach_face(result, (GtsFunc) zeta_select, this);
+  std::set<gts::FaceId> tset;
+  for (gts::FaceId t : result->faces())
+    if (is_zeta(t)) tset.insert(t);
 
   if (debug > 0)
   {
@@ -524,68 +377,49 @@ void BoolOpHelper::handle_zeta_triangles()
 
   while ( ! tset.empty())
   {
-    GtsTriangle *t = * tset.begin();
-    GtsEdge *el = longest_edge(t);
-    GtsEdge *es = shortest_edge(t);
+    const gts::FaceId t = *tset.begin();
+    tset.erase(tset.begin());
+    if ( ! result->contains(t)) continue;
+
+    gts::EdgeId el = longest_edge(g, t);
+    gts::EdgeId es = shortest_edge(g, t);
 
     if (debug > 1)
     {
-      printf("a=%22.18g, p=%22.18g, q=%22.18g\n", gts_triangle_area(t), gts_triangle_perimeter(t), gts_triangle_quality(t));
+      printf("a=%22.18g, p=%22.18g, q=%22.18g\n", g.area(t), g.perimeter(t), g.quality(t));
       printf("  longest=%.18g (%d), shortest=%.18g (%d)\n",
-	     edge_len(el), gts_edge_collapse_is_valid(el),
-	     edge_len(es), gts_edge_collapse_is_valid(es));
-      print_triangles(el->triangles, t);
-      print_triangles(es->triangles, t);
+	     edge_len(g, el), g.collapsible(el),
+	     edge_len(g, es), g.collapsible(es));
+      print_triangles(g, el, t);
+      print_triangles(g, es, t);
     }
 
-    GtsTriangle *to = 0;
+    gts::FaceId to;
 
-    if (edge_len(es) > eps_p)
+    if (edge_len(g, es) > eps_p)
     {
       if (debug > 1)
       {
 	printf(" Reconnecting vertices opposite to longest edge.\n");
       }
 
-      to = edge_other_triangle(el, t);
-
-      // This doesn't always work (was lucky to work on example with
-      // intersection curve in y-z plane).
-      // So ... get normal and do dot product with new triangle normals later.
-      // bool orientation_is_positive = gts_triangle_orientation(to) > 0;
-      double onx, ony, onz, nx, ny, nz;
-      gts_triangle_normal(to, &onx, &ony, &onz);
-
-      GtsVertex *v1 = gts_triangle_vertex_opposite(t,  el);
-      GtsVertex *v2 = gts_triangle_vertex_opposite(to, el);
-
-      GtsEdge *new_edge = gts_edge_new(gts_edge_class(), v1, v2);
-
-      GtsFace *f1 = gts_face_new(gts_face_class(), new_edge,
-				 gts_triangle_edge_opposite(t,  el->segment.v1),
-				 gts_triangle_edge_opposite(to, el->segment.v1));
-      gts_surface_add_face(result, f1);
-      // if ((gts_triangle_orientation(&f1->triangle) > 0) != orientation_is_positive)
-      gts_triangle_normal(&f1->triangle, &nx, &ny, &nz);
-      if (nx*onx + ny*ony + nz*onz < 0)
-	gts_triangle_revert(&f1->triangle);
-
-      GtsFace *f2 = gts_face_new(gts_face_class(), new_edge,
-				 gts_triangle_edge_opposite(t,  el->segment.v2),
-				 gts_triangle_edge_opposite(to, el->segment.v2));
-      gts_surface_add_face(result, f2);
-      // if ((gts_triangle_orientation(&f2->triangle) > 0) != orientation_is_positive)
-      gts_triangle_normal(&f2->triangle, &nx, &ny, &nz);
-      if (nx*onx + ny*ony + nz*onz < 0)
-	gts_triangle_revert(&f2->triangle);
-
-      gts_object_destroy(GTS_OBJECT(el));
+      to = other_face(el, t);
+      try
+      {
+        gts::swap_edge(*result, el);
+      }
+      catch (const std::invalid_argument& e)
+      {
+        if (debug > 1) printf(" Swap failed: %s\n", e.what());
+        ++n_failed;
+        continue;
+      }
 
       // Collect shortest edges -- these can be safely
       // collapsed after the surface has been processed with this function.
       // Coarsening also removes them.
       // Edge-length limit is applied afterwards.
-      impl->edge_set.insert(es);
+      edge_set.insert(es);
 
       ++n_reconnected;
     }
@@ -596,19 +430,18 @@ void BoolOpHelper::handle_zeta_triangles()
 	printf(" Collapsing shortest edge.\n");
       }
 
-      to = edge_other_triangle(es, t);
+      to = other_face(es, t);
 
-      edge_collapse(es, debug > 1);
+      geo->collapse_edge(es, mid_point(g, es));
 
       ++n_collapsed;
     }
 
-    tset.erase(t);
-    tset.erase(to);
+    if (to.valid()) tset.erase(to);
   }
 
   if (debug > 0)
   {
-    printf("End zeta handling, Ncollapsed=%d, Nreconnected=%d\n", n_collapsed, n_reconnected);
+    printf("End zeta handling, Ncollapsed=%d, Nreconnected=%d, Nfailed=%d\n", n_collapsed, n_reconnected, n_failed);
   }
 }

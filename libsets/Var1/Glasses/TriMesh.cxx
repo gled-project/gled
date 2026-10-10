@@ -9,7 +9,6 @@
 #include <Glasses/ZImage.h>
 #include <Glasses/RGBAPalette.h>
 
-#include <GTS/GTS.h>
 
 #include <Opcode/Opcode.h>
 
@@ -375,44 +374,21 @@ void TriMesh::ImportGTSurf(GTSurf* gts)
 
   if (!gts)
     throw _eh + "called with null argument.";
-  if (!gts->GetSurf())
-    throw _eh + "GtsSurface is null.";
 
-  struct Dumper
+  std::vector<Double_t> verts;
+  std::vector<Int_t>    faces;
   {
-    std::map<GtsVertex*, int>  m_map;
-    TringTvor            *m_tvor;
-    int                   m_vcount;
-    int                   m_tcount;
+    GLensReadHolder _rlck(gts);
+    if (!gts->GetMesh())
+      throw _eh + "GTS surface is null.";
+    gts->GetTriangles(verts, faces);
+  }
 
-    Dumper(TringTvor* t) : m_tvor(t), m_vcount(0), m_tcount(0) {}
-
-    static void vdump(GtsVertex* v, Dumper* arg)
-    {
-      arg->m_map[v] = arg->m_vcount;
-      Float_t *q = arg->m_tvor->Vertex(arg->m_vcount);
-      q[0] = v->p.x; q[1] = v->p.y; q[2] = v->p.z;
-      ++arg->m_vcount;
-    }
-
-    static void fdump(GtsFace* f, Dumper* arg)
-    {
-      GtsVertex *a, *b, *c;
-      gts_triangle_vertices(&f->triangle, &a, &b, &c);
-      Int_t *q = arg->m_tvor->Triangle(arg->m_tcount);
-      q[0] = arg->m_map[a]; q[1] = arg->m_map[b]; q[2] = arg->m_map[c];
-      ++arg->m_tcount;
-    }
-
-  };
-
-  GtsSurface* surf = gts->GetSurf();
-  TringTvor* tt = new TringTvor(gts_surface_vertex_number(surf),
-                                gts_surface_face_number  (surf));
-
-  Dumper arg(tt);
-  gts_surface_foreach_vertex(surf, (GtsFunc) Dumper::vdump, &arg);
-  gts_surface_foreach_face  (surf, (GtsFunc) Dumper::fdump, &arg);
+  TringTvor* tt = new TringTvor(verts.size() / 3, faces.size() / 3);
+  Float_t *q = tt->Vertex(0);
+  for (Double_t x : verts) *q++ = x;
+  Int_t *t = tt->Triangle(0);
+  for (Int_t i : faces) *t++ = i;
 
   GLensWriteHolder _wlck(this);
   delete mTTvor;
@@ -424,51 +400,10 @@ void TriMesh::ExportGTSurf(GTSurf* gts)
 {
   static const Exc_t _eh("TriMesh::ExportGTSurf ");
 
-  // Prepare edge data
+  std::vector<Double_t> verts(mTTvor->Verts(), mTTvor->Verts() + 3*mTTvor->mNVerts);
+  std::vector<Int_t>    faces(mTTvor->Trings(), mTTvor->Trings() + 3*mTTvor->mNTrings);
 
-  hEdge_t edge_map;
-  Int_t   edge_cnt = fill_edge_map(edge_map, 0);
-  printf("%sCounting edges => %d, map-size = %d.\n", _eh.Data(),
-         edge_cnt, (int)edge_map.size());
-
-  // Construct surface
-
-  GtsSurface* surf = MakeDefaultSurface();
-
-  GtsVertex **vertices = new GtsVertex*[mTTvor->mNVerts];
-  {
-    Float_t* va = mTTvor->Verts();
-    for(Int_t v=0; v<mTTvor->mNVerts; ++v) {
-      vertices[v] = gts_vertex_new(surf->vertex_class,
-                                   va[0], va[1], va[2]);
-      va += 3;
-    }
-  }
-
-  GtsEdge **edges = new GtsEdge*[edge_cnt];
-  {
-    for(hEdge_i e=edge_map.begin(); e!=edge_map.end(); ++e) {
-      edges[e->second] = gts_edge_new(surf->edge_class,
-                                      vertices[e->first.v1],
-                                      vertices[e->first.v2]);
-    }
-  }
-
-  {
-    Int_t* ta = mTTvor->Trings();
-    for(Int_t t=0; t<mTTvor->mNTrings; ++t) {
-      Int_t e1, e2, e3;
-      e1 = edge_map.find(Edge(ta[0], ta[1]))->second;
-      e2 = edge_map.find(Edge(ta[1], ta[2]))->second;
-      e3 = edge_map.find(Edge(ta[2], ta[0]))->second;
-      GtsFace * new_face = gts_face_new(surf->face_class,
-                                        edges[e1], edges[e2], edges[e3]);
-      gts_surface_add_face (surf, new_face);
-      ta += 3;
-    }
-  }
-
-  gts->ReplaceSurface(surf);
+  gts->SetTriangles(verts, faces);
 }
 
 

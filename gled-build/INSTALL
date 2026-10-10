@@ -15,13 +15,20 @@ The base libsets need:
  GSL
  OpenSSL   3                           for authentication
 
-GledGTS needs GTS 0.7, Audio1 needs OpenAL, freealut and libvorbis. FTGL,
+GledGTS needs gts-cxx, Audio1 needs OpenAL, freealut and libvorbis. FTGL,
 ROOT's fork of 2.1.2, is part of GledCore (Rnr/GL/FTGL.h and FTGL.cxx).
-A distribution's packages cover everything (on Fedora: fltk-devel,
-glew-devel, mesa-libGLU-devel, DevIL-devel, freetype-devel, gsl-devel,
-openssl-devel, gts-devel, openal-soft-devel, freealut-devel,
+A distribution's packages cover everything except gts-cxx (on Fedora:
+fltk-devel, glew-devel, mesa-libGLU-devel, DevIL-devel, freetype-devel,
+gsl-devel, openssl-devel, openal-soft-devel, freealut-devel,
 libvorbis-devel); the gled-builder repository can instead build them into
 one prefix.
+
+ gts-cxx   0.1, needs GCC 15           https://github.com/gled-project/gts-cxx
+
+gts-cxx is the C++23 rewrite of GTS. Build it with 'make lib' in its
+directory and give that directory to configure with -external, or install
+it with 'make install PREFIX=<prefix>' and give the prefix. gled-builder
+clones and builds it.
 
 Build procedure
 ---------------

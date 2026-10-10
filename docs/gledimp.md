@@ -511,18 +511,22 @@ have all this stuff is to run:
 
     PKGS="subversion autoconf automake libtool cmake \
           glew glew-devel \
-          fltk DevIL gts openal freealut \
-          fltk-devel DevIL-devel gts-devel openal-devel freealut-devel"
+          fltk DevIL openal freealut \
+          fltk-devel DevIL-devel openal-devel freealut-devel"
 
     [apt-get | yum | <whatever>] install $PKGS
 
 `gled-builder` will build its own versions of `fltk`, `DevIL`,
-`gts`, `openal` and `freealut` but their system-level install will
+`openal` and `freealut` but their system-level install will
 ensure you have all the dependencies. Eventually (and optionally) we
 will check if appropriate versions of those are available and skip
 them during the build. However, `Gled` requires the latest versions
 of some libraries that are not shipped even with the latest
-distributions (`fltk-1.1.9`, `gts-HEAD`).
+distributions (`fltk-1.1.9`).
+
+`gled-builder` also clones and builds `gts-cxx`, the C++ rewrite of
+GTS that `GledGTS` uses; no distribution ships it. See
+`gled-build/INSTALL`.
 
 `Gled` is also put into the install directory ... but one can also
 run it from the build directory itself.

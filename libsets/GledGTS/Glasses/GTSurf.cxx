@@ -13,6 +13,8 @@
 #include <TRandom3.h>
 #include <TTree.h>
 
+#include <iostream>
+
 using namespace gled;
 
 #include "GTSurf.c7"
@@ -31,7 +33,7 @@ void GTSurf::_init()
   mPointColor.rgba(1, 0, 0, 1);
   bRnrPoints = false;
 
-  pSurf = 0;
+  pMesh = 0;
   mVerts = mEdges = mFaces = 0;
 
   mPostBoolOp = PBM_AsFractions;
@@ -40,40 +42,92 @@ void GTSurf::_init()
   mPostBoolLength    = 1e-1;
 }
 
+GTSurf::~GTSurf()
+{
+  delete pMesh;
+}
+
 /**************************************************************************/
 
-void GTSurf::ReplaceSurface(GtsSurface* new_surf)
+void GTSurf::ReplaceSurface(GTS::Mesh* new_mesh)
+{
+  // Elements left dead by the operation that made the mesh are reclaimed.
+  if (new_mesh) new_mesh->geo().collect();
+
+  GLensReadHolder _lck(this);
+  delete pMesh;
+  pMesh = new_mesh;
+  mStampReqTring = Stamp(FID());
+}
+
+GTS::Mesh* GTSurf::CopySurface()
 {
   GLensReadHolder _lck(this);
-  if (pSurf)
+
+  if (pMesh == 0) return 0;
+
+  return pMesh->Copy();
+}
+
+GTS::Mesh* GTSurf::DisownSurface()
+{
+  GLensReadHolder _lck(this);
+
+  GTS::Mesh* m = pMesh;
+  pMesh = 0;
+  mStampReqTring = Stamp(FID());
+
+  return m;
+}
+
+void GTSurf::GetTriangles(std::vector<Double_t>& verts, std::vector<Int_t>& faces)
+{
+  verts.clear(); faces.clear();
+  if (pMesh == 0) return;
+
+  const gts::Geometrium& g = pMesh->geo();
+  std::vector<Int_t> index(g.vertex_capacity(), -1);
+  Int_t n = 0;
+  for (gts::VertexId v : pMesh->surf().vertices())
   {
-    gts_object_destroy(GTS_OBJECT(pSurf));
+    index[v.i] = n++;
+    const gts::Vec3& p = g.vertex(v).p;
+    verts.insert(verts.end(), { p.x, p.y, p.z });
   }
-  pSurf = new_surf;
-  mStampReqTring = Stamp(FID());
+  for (gts::FaceId f : pMesh->surf().faces())
+    for (gts::VertexId v : g.vertices_of(f))
+      faces.push_back(index[v.i]);
 }
 
-GtsSurface* GTSurf::CopySurface()
+void GTSurf::SetTriangles(const std::vector<Double_t>& verts, const std::vector<Int_t>& faces)
 {
-  GLensReadHolder _lck(this);
+  static const Exc_t _eh("GTSurf::SetTriangles ");
 
-  if (pSurf == 0) return 0;
-
-  GtsSurface* s = MakeDefaultSurface();
-  gts_surface_copy(s, pSurf);
-
-  return s;
-}
-
-GtsSurface* GTSurf::DisownSurface()
-{
-  GLensReadHolder _lck(this);
-
-  GtsSurface* s = pSurf;
-  pSurf = 0;
-  mStampReqTring = Stamp(FID());
-
-  return s;
+  auto m = std::make_unique<GTS::Mesh>();
+  gts::Geometrium& g = m->geo();
+  const Int_t nv = verts.size() / 3;
+  for (Int_t i = 0; i < nv; ++i)
+    g.add_vertex({ verts[3*i], verts[3*i + 1], verts[3*i + 2] });
+  auto edge = [&](Int_t a, Int_t b) {
+    if (a < 0 || a >= nv || b < 0 || b >= nv)
+      throw _eh + GForm("vertex index out of range in edge (%d, %d).", a, b);
+    const gts::VertexId va(a), vb(b);
+    const gts::EdgeId e = g.find_edge(va, vb);
+    return e.valid() ? e : g.add_edge(va, vb);
+  };
+  try
+  {
+    for (size_t i = 0; i + 2 < faces.size(); i += 3)
+    {
+      const Int_t* t = &faces[i];
+      m->surf().add_face(g.add_face(edge(t[0], t[1]), edge(t[1], t[2]), edge(t[2], t[0])));
+    }
+  }
+  catch (const std::exception& e)
+  {
+    throw _eh + e.what();
+  }
+  ReplaceSurface(m.release());
 }
 
 
@@ -89,35 +143,36 @@ namespace
     projected_area_sum_arg(double x, double y, double z) : dir(x,y,z), sum(0) {}
   };
 
-  void projected_area_sum(GtsFace* f, projected_area_sum_arg* arg)
+  void projected_area_sum(const gts::Geometrium& g, gts::FaceId f, projected_area_sum_arg* arg)
   {
     // This is summing *twice* the area of each triangle.
 
-    HPointD p;
-    gts_triangle_normal(&f->triangle, &p.x, &p.y, &p.z);
+    const gts::Vec3 n = g.normal(f);
+    HPointD p(n.x, n.y, n.z);
     arg->sum += TMath::Abs(arg->dir.Dot(p));
   }
 }
 
 Double_t GTSurf::GetArea() const
 {
-  if (!pSurf) return 0;
-  return gts_surface_area(pSurf);
+  if (!pMesh) return 0;
+  return gts::area(pMesh->surf());
 }
 
 Double_t GTSurf::GetXYArea() const
 {
-  if (!pSurf) return 0;
+  if (!pMesh) return 0;
 
   projected_area_sum_arg arg(0, 0, 1);
-  gts_surface_foreach_face(pSurf, (GtsFunc) projected_area_sum, &arg);
+  for (gts::FaceId f : pMesh->surf().faces())
+    projected_area_sum(pMesh->geo(), f, &arg);
   return arg.sum / 4;
 }
 
 Double_t GTSurf::GetVolume() const
 {
-  if (!pSurf) return 0;
-  return gts_surface_volume(pSurf);
+  if (!pMesh) return 0;
+  return gts::volume(pMesh->surf());
 }
 
 
@@ -129,47 +184,31 @@ void GTSurf::Load(const TString& file)
 
   TString file_name = file.IsNull() ? mFile : file;
 
-  FILE* fp = fopen(file_name, "r");
-  if (!fp)
+  auto g = std::make_unique<gts::Geometrium>();
+  auto s = gts::read_gts(*g, std::filesystem::path(file_name.Data()));
+  if ( ! s)
   {
-    ISerr(_eh + GForm("Can not open file '%s'", file_name.Data()));
+    ISerr(_eh + GForm("Reading '%s' failed at line %u, position %u: %s", file_name.Data(),
+                      s.error().line, s.error().pos, s.error().message.c_str()));
     return;
   }
 
-  GtsSurface *s   = MakeDefaultSurface();
-  GtsFile    *gsf = gts_file_new(fp);
-  if (gts_surface_read(s, gsf) != 0)
-  {
-    ISerr(_eh + GForm("gts_surface_read failed."));
-    gts_object_destroy(GTS_OBJECT(s));
-    gts_file_destroy(gsf);
-    fclose(fp);
-    return;
-  }
-  gts_file_destroy(gsf);
-  fclose(fp);
-
-  ReplaceSurface(s);
+  ReplaceSurface(new GTS::Mesh(std::move(g), **s));
 }
 
 void GTSurf::Save(const TString& file)
 {
   static const Exc_t _eh("GTSurf::Save ");
 
-  if (pSurf == 0) {
+  if (pMesh == 0) {
     ISerr(_eh + "Surface is null.");
     return;
   }
 
   TString file_name = file.IsNull() ? mFile : file;
 
-  FILE* fp = fopen(file_name, "w");
-  if (!fp) {
+  if ( ! gts::write_gts(pMesh->surf(), std::filesystem::path(file_name.Data())))
     ISerr(_eh + GForm("Can not open file '%s'.", file_name.Data()));
-    return;
-  }
-  gts_surface_write(pSurf, fp);
-  fclose(fp);
 }
 
 
@@ -177,7 +216,7 @@ void GTSurf::Save(const TString& file)
 
 namespace
 {
-  void copy_stats(SRange& d, GtsRange& s)
+  void copy_stats(SRange& d, const gts::Range& s)
   {
     d.SetMin(s.min);  d.SetMax(s.max);
     d.SetSumX(s.sum); d.SetSumX2(s.sum2);
@@ -187,14 +226,14 @@ namespace
 
 void GTSurf::CalcStats()
 {
-  if (pSurf == 0) return;
+  if (pMesh == 0) return;
 
-  mVerts = gts_surface_vertex_number(pSurf);
-  mEdges = gts_surface_edge_number(pSurf);
-  mFaces = gts_surface_face_number(pSurf);
+  const gts::Surface& s = pMesh->surf();
+  mVerts = s.vertex_number();
+  mEdges = s.edge_number();
+  mFaces = s.face_number();
 
-  GtsSurfaceQualityStats stats;
-  gts_surface_quality_stats(pSurf, &stats);
+  const gts::QualityStats stats = gts::quality_stats(s);
   copy_stats(mFaceQuality, stats.face_quality);
   copy_stats(mFaceArea,    stats.face_area);
   copy_stats(mEdgeLength,  stats.edge_length);
@@ -205,8 +244,10 @@ void GTSurf::CalcStats()
 
 void GTSurf::PrintStats()
 {
-  if (pSurf) {
-    gts_surface_print_stats(pSurf, stdout);
+  if (pMesh) {
+    std::cout.flush(); fflush(stdout);
+    gts::print_stats(pMesh->surf(), std::cout);
+    std::cout.flush();
   }
 }
 
@@ -214,18 +255,18 @@ void GTSurf::PrintStats()
 
 void GTSurf::Destroy()
 {
-  if (pSurf == 0) return;
+  if (pMesh == 0) return;
 
-  gts_object_destroy (GTS_OBJECT (pSurf));
-  pSurf = 0;
+  delete pMesh;
+  pMesh = 0;
   mStampReqTring = Stamp(FID());
 }
 
 void GTSurf::Invert()
 {
-  if (pSurf) 
+  if (pMesh)
   {
-    InvertSurface(pSurf);
+    InvertSurface(pMesh->surf());
     mStampReqTring = Stamp(FID());
   }
 }
@@ -234,43 +275,47 @@ void GTSurf::Invert()
 
 namespace
 {
-  void vertex_scaler(GtsVertex* v, Double_t* s)
+  void scale_vertices(GTS::Mesh& m, const Double_t* s)
   {
-    v->p.x *= s[0]; v->p.y *= s[1]; v->p.z *= s[2];
+    for (gts::VertexId v : m.surf().vertices())
+    {
+      gts::Vec3& p = m.geo().position(v);
+      p.x *= s[0]; p.y *= s[1]; p.z *= s[2];
+    }
   }
 }
 
 void GTSurf::Rescale(Double_t s)
 {
-  if (pSurf)
+  if (pMesh)
   {
     Double_t sxyz[3] = { s, s, s };
-    gts_surface_foreach_vertex(pSurf, (GtsFunc)vertex_scaler, &sxyz);
+    scale_vertices(*pMesh, sxyz);
     mStampReqTring = Stamp(FID());
   }
 }
 
 void GTSurf::RescaleXYZ(Double_t sx, Double_t sy, Double_t sz)
 {
-  if (pSurf)
+  if (pMesh)
   {
     Double_t sxyz[3] = { sx, sy, sz };
-    gts_surface_foreach_vertex(pSurf, (GtsFunc)vertex_scaler, &sxyz);
+    scale_vertices(*pMesh, sxyz);
     mStampReqTring = Stamp(FID());
   }
 }
 
 void GTSurf::TransformAndResetTrans()
 {
-  if (pSurf)
-    TransformSurfaceVertices(pSurf, &mTrans);
+  if (pMesh)
+    TransformSurfaceVertices(pMesh->surf(), mTrans);
   UnitTrans();
 }
 
 void GTSurf::RotateAndResetRot()
 {
-  if (pSurf)
-    RotateSurfaceVertices(pSurf, &mTrans);
+  if (pMesh)
+    RotateSurfaceVertices(pMesh->surf(), mTrans);
   UnitRot();
 }
 
@@ -279,23 +324,22 @@ void GTSurf::RotateAndResetRot()
 
 namespace
 {
-  GtsVertex* mid_edge_splitter(GtsEdge *e, GtsVertexClass *k, gpointer /*d*/)
+  // At a + 0.5 (b - a), not at gts::midvertex's (a + b) / 2.
+  gts::VertexId mid_edge_splitter(gts::Geometrium& g, gts::EdgeId e)
   {
-    GtsPoint &a = e->segment.v1->p, &b = e->segment.v2->p;
-    return gts_vertex_new(k, a.x + 0.5*(b.x - a.x),
-			  a.y + 0.5*(b.y - a.y),
-			  a.z + 0.5*(b.z - a.z));
+    return g.interpolate_vertex(g.edge(e).v[0], g.edge(e).v[1], 0.5);
   }
 }
 
 void GTSurf::Tessellate(UInt_t order, Bool_t mid_edge)
 {
-  if (pSurf == 0) return;
+  if (pMesh == 0) return;
 
   while (order--)
   {
-    gts_surface_tessellate(pSurf, mid_edge ? mid_edge_splitter : 0, 0);
+    gts::tessellate(pMesh->surf(), mid_edge ? gts::Splitter(mid_edge_splitter) : gts::Splitter());
   }
+  pMesh->geo().collect();
   mStampReqTring = Stamp(FID());
 }
 
@@ -357,63 +401,66 @@ void GTSurf::Difference(GTSurf* a, GTSurf* b)
 
 void GTSurf::GenerateSphere(UInt_t order)
 {
-  if (pSurf)
-    gts_object_destroy (GTS_OBJECT (pSurf));
-  pSurf = MakeDefaultSurface();
+  static const Exc_t _eh("GTSurf::GenerateSphere ");
 
-  gts_surface_generate_sphere(pSurf, order);
+  if (order == 0) throw _eh + "order must be at least 1.";
 
-  mStampReqTring = Stamp(FID());
+  auto m = std::make_unique<GTS::Mesh>();
+  gts::generate_sphere(m->surf(), order);
+  ReplaceSurface(m.release());
 }
 
 void GTSurf::GenerateTriangle(Double_t s)
 {
-  if (pSurf)
-    gts_object_destroy (GTS_OBJECT (pSurf));
-  pSurf = MakeDefaultSurface();
+  auto m = std::make_unique<GTS::Mesh>();
+  gts::Geometrium& g = m->geo();
 
   const Double_t sqrt3 = TMath::Sqrt(3);
-  GtsVertex * v[3];
-  v[0] = gts_vertex_new(pSurf->vertex_class, -s*0.5, -s*sqrt3/6, 0);
-  v[1] = gts_vertex_new(pSurf->vertex_class,  s*0.5, -s*sqrt3/6, 0);
-  v[2] = gts_vertex_new(pSurf->vertex_class,  0,      s*sqrt3/3, 0);
+  gts::VertexId v[3];
+  v[0] = g.add_vertex({ -s*0.5, -s*sqrt3/6, 0 });
+  v[1] = g.add_vertex({  s*0.5, -s*sqrt3/6, 0 });
+  v[2] = g.add_vertex({  0,      s*sqrt3/3, 0 });
 
-  GtsEdge * e[3];
-  e[0] = gts_edge_new(pSurf->edge_class, v[0], v[1]);
-  e[1] = gts_edge_new(pSurf->edge_class, v[1], v[2]);
-  e[2] = gts_edge_new(pSurf->edge_class, v[2], v[0]);
+  gts::EdgeId e[3];
+  e[0] = g.add_edge(v[0], v[1]);
+  e[1] = g.add_edge(v[1], v[2]);
+  e[2] = g.add_edge(v[2], v[0]);
 
-  GtsFace * f = gts_face_new(pSurf->face_class, e[0], e[1], e[2]);
-  gts_surface_add_face(pSurf, f);
-
-  mStampReqTring = Stamp(FID());
+  m->surf().add_face(g.add_face(e[0], e[1], e[2]));
+  ReplaceSurface(m.release());
 }
 
 namespace
 {
-  void lcme_filler(GtsVertex* v, LegendreCoefs::MultiEval* me)
+  // Adds the vertices of m to me; verts gets them in the order of adding,
+  // which is the order of the values in me.
+  void lcme_fill(GTS::Mesh& m, LegendreCoefs::MultiEval& me, std::vector<gts::VertexId>& verts)
   {
-    me->AddPoint(v->p.x, v->p.y, v->p.z, v);
+    verts.clear();
+    for (gts::VertexId v : m.surf().vertices()) verts.push_back(v);
+    me.Init(verts.size());
+    for (gts::VertexId v : verts)
+    {
+      const gts::Vec3& p = m.geo().vertex(v).p;
+      me.AddPoint(p.x, p.y, p.z, 0);
+    }
+    me.Sort();
   }
 }
 
 void GTSurf::GenerateSphereThetaConst(UInt_t order)
 {
-  if (pSurf)
-    gts_object_destroy (GTS_OBJECT (pSurf));
-  pSurf = MakeDefaultSurface();
-
-  gts_surface_generate_sphere(pSurf, 1);
+  auto m = std::make_unique<GTS::Mesh>();
+  gts::generate_sphere(m->surf(), 1);
+  std::vector<gts::VertexId> verts;
   Double_t quater_len = 1.051462 / 4;
 
   for (UInt_t cgo = 1; cgo < order; ++cgo)
   {
-    gts_surface_tessellate(pSurf, 0, 0);
+    gts::tessellate(m->surf());
 
     LegendreCoefs::MultiEval me;
-    me.Init(gts_surface_vertex_number(pSurf));
-    gts_surface_foreach_vertex(pSurf, (GtsFunc) lcme_filler, &me);
-    me.Sort();
+    lcme_fill(*m, me, verts);
 
     quater_len *= 0.5;
 
@@ -435,18 +482,18 @@ void GTSurf::GenerateSphereThetaConst(UInt_t order)
 	  for (Int_t j = i0; j < i; ++j)
 	  {
 	    Int_t jj = me.fIdcs[j];
-	    GtsVertex *v = (GtsVertex*) me.fUserData[jj];
-	    v->p.z = me.fPhis[jj] > 0 ? z : -z;
-	    Double_t fac = v->p.x*v->p.x + v->p.y*v->p.y;
+	    gts::Vec3 &p = m->geo().position(verts[jj]);
+	    p.z = me.fPhis[jj] > 0 ? z : -z;
+	    Double_t fac = p.x*p.x + p.y*p.y;
 	    if (fac > 1e-18)
 	    {
 	      fac = sqrt((1.0 - z*z) / fac);
-	      v->p.x *= fac;
-	      v->p.y *= fac;
+	      p.x *= fac;
+	      p.y *= fac;
 	    }
 	    else
 	    {
-	      v->p.z = v->p.z > 0 ? 1.0 : -1.0;
+	      p.z = p.z > 0 ? 1.0 : -1.0;
 	    }
 	  }
 	}
@@ -462,7 +509,7 @@ void GTSurf::GenerateSphereThetaConst(UInt_t order)
     }
   }
 
-  mStampReqTring = Stamp(FID());
+  ReplaceSurface(m.release());
 }
 
 
@@ -472,18 +519,24 @@ void GTSurf::GenerateSphereThetaConst(UInt_t order)
 
 namespace
 {
-  void legendre_vertex_adder(GtsVertex* v, LegendreCoefs::Evaluator* e)
+  void legendre_vertex_adder(gts::Vec3& p, LegendreCoefs::Evaluator* e)
   {
-    HPointD  vec(v->p.x, v->p.y, v->p.z);
+    HPointD  vec(p.x, p.y, p.z);
     vec *= 1.0 + e->Eval(vec) / vec.Mag();
-    v->p.x = vec.x; v->p.y = vec.y; v->p.z = vec.z;
+    p.x = vec.x; p.y = vec.y; p.z = vec.z;
   }
 
-  void legendre_vertex_scaler(GtsVertex* v, LegendreCoefs::Evaluator* e)
+  void legendre_vertex_scaler(gts::Vec3& p, LegendreCoefs::Evaluator* e)
   {
-    HPointD  vec(v->p.x, v->p.y, v->p.z);
+    HPointD  vec(p.x, p.y, p.z);
     vec *= 1.0 + e->Eval(vec);
-    v->p.x = vec.x; v->p.y = vec.y; v->p.z = vec.z;
+    p.x = vec.x; p.y = vec.y; p.z = vec.z;
+  }
+
+  template <class F>
+  void foreach_position(GTS::Mesh& m, F f)
+  {
+    for (gts::VertexId v : m.surf().vertices()) f(m.geo().position(v));
   }
 }
 
@@ -491,14 +544,12 @@ void GTSurf::LegendrofyAdd(LegendreCoefs* lc, Double_t scale, Int_t l_max)
 {
   static const Exc_t _eh("GTSurf::LegendrofyAdd ");
 
-  if (pSurf == 0) throw _eh + "member pSurf is 0.";
+  if (pMesh == 0) throw _eh + "member pMesh is 0.";
   if (lc    == 0) throw _eh + "argument lc is 0.";
 
   LegendreCoefs::Evaluator eval(lc, scale, l_max);
 
-  gts_surface_foreach_vertex(pSurf,
-				  (GtsFunc) legendre_vertex_adder,
-				  &eval);
+  foreach_position(*pMesh, [&](gts::Vec3& p) { legendre_vertex_adder(p, &eval); });
 
   mStampReqTring = Stamp(FID());
 }
@@ -507,14 +558,12 @@ void GTSurf::LegendrofyScale(LegendreCoefs* lc, Double_t scale, Int_t l_max)
 {
   static const Exc_t _eh("GTSurf::LegendrofyScale ");
 
-  if (pSurf == 0) throw _eh + "member pSurf is 0.";
+  if (pMesh == 0) throw _eh + "member pMesh is 0.";
   if (lc    == 0) throw _eh + "argument lc is 0.";
 
   LegendreCoefs::Evaluator eval(lc, scale, l_max);
 
-  gts_surface_foreach_vertex(pSurf,
-				  (GtsFunc) legendre_vertex_scaler,
-				  &eval);
+  foreach_position(*pMesh, [&](gts::Vec3& p) { legendre_vertex_scaler(p, &eval); });
 
   mStampReqTring = Stamp(FID());
 }
@@ -526,7 +575,7 @@ void GTSurf::LegendrofyScaleRandom(Int_t l_max, Double_t abs_scale, Double_t pow
 
   static const Exc_t _eh("GTSurf::LegendrofyScaleRandom ");
 
-  if (pSurf == 0) throw _eh + "member pSurf is 0.";
+  if (pMesh == 0) throw _eh + "member pMesh is 0.";
 
   std::unique_ptr<LegendreCoefs> lc(new LegendreCoefs);
   lc->InitRandom(l_max, abs_scale, pow_scale);
@@ -534,9 +583,7 @@ void GTSurf::LegendrofyScaleRandom(Int_t l_max, Double_t abs_scale, Double_t pow
 
   LegendreCoefs::Evaluator eval(lc.get());
 
-  gts_surface_foreach_vertex(pSurf,
-				  (GtsFunc) legendre_vertex_scaler,
-				  &eval);
+  foreach_position(*pMesh, [&](gts::Vec3& p) { legendre_vertex_scaler(p, &eval); });
 
   mStampReqTring = Stamp(FID());
 }
@@ -545,14 +592,16 @@ void GTSurf::LegendrofyScaleRandom(Int_t l_max, Double_t abs_scale, Double_t pow
 // Legendrification, the Multi way
 //------------------------------------------------------------------------------
 
-void GTSurf::legendrofy_multi_common(LegendreCoefs* lc, LegendreCoefs::MultiEval& me, const Exc_t eh)
+namespace
 {
-  if (pSurf == 0) throw eh + "member pSurf is 0.";
-  if (lc    == 0) throw eh + "argument lc is 0.";
+  void legendrofy_multi_common(GTS::Mesh* m, LegendreCoefs* lc, LegendreCoefs::MultiEval& me,
+                               std::vector<gts::VertexId>& verts, const Exc_t eh)
+  {
+    if (m  == 0) throw eh + "member pMesh is 0.";
+    if (lc == 0) throw eh + "argument lc is 0.";
 
-  me.Init(gts_surface_vertex_number(pSurf));
-  gts_surface_foreach_vertex(pSurf, (GtsFunc) lcme_filler, &me);
-  me.Sort();
+    lcme_fill(*m, me, verts);
+  }
 }
 
 void GTSurf::LegendrofyAddMulti(LegendreCoefs* lc, Double_t scale, Int_t l_max)
@@ -560,17 +609,18 @@ void GTSurf::LegendrofyAddMulti(LegendreCoefs* lc, Double_t scale, Int_t l_max)
   static const Exc_t _eh("GTSurf::LegendrofyAddMulti ");
 
   LegendreCoefs::MultiEval me;
+  std::vector<gts::VertexId> verts;
 
-  legendrofy_multi_common(lc, me, _eh);
+  legendrofy_multi_common(pMesh, lc, me, verts, _eh);
 
   lc->EvalMulti(me, l_max);
 
   for (Int_t i = 0; i < me.fN; ++i)
   {
-    GtsVertex *v = (GtsVertex*) me.fUserData[i];
-    HPointD  vec(v->p.x, v->p.y, v->p.z);
+    gts::Vec3 &p = pMesh->geo().position(verts[i]);
+    HPointD  vec(p.x, p.y, p.z);
     vec *= 1.0 + scale * me.fMVec[i] / vec.Mag();
-    v->p.x = vec.x; v->p.y = vec.y; v->p.z = vec.z;
+    p.x = vec.x; p.y = vec.y; p.z = vec.z;
   }
 
   mStampReqTring = Stamp(FID());
@@ -581,17 +631,18 @@ void GTSurf::LegendrofyScaleMulti(LegendreCoefs* lc, Double_t scale, Int_t l_max
   static const Exc_t _eh("GTSurf::LegendrofyScaleMulti ");
 
   LegendreCoefs::MultiEval me;
+  std::vector<gts::VertexId> verts;
 
-  legendrofy_multi_common(lc, me, _eh);
+  legendrofy_multi_common(pMesh, lc, me, verts, _eh);
 
   lc->EvalMulti(me, l_max);
 
   for (Int_t i = 0; i < me.fN; ++i)
   {
-    GtsVertex *v = (GtsVertex*) me.fUserData[i];
-    HPointD  vec(v->p.x, v->p.y, v->p.z);
+    gts::Vec3 &p = pMesh->geo().position(verts[i]);
+    HPointD  vec(p.x, p.y, p.z);
     vec *= 1.0 + scale * me.fMVec[i];
-    v->p.x = vec.x; v->p.y = vec.y; v->p.z = vec.z;
+    p.x = vec.x; p.y = vec.y; p.z = vec.z;
   }
 
   mStampReqTring = Stamp(FID());
@@ -606,16 +657,17 @@ void GTSurf::LegendrofyScaleRandomMulti(Int_t l_max, Double_t abs_scale, Double_
   lc->SetCoef(0, 0, 0);
 
   LegendreCoefs::MultiEval me;
+  std::vector<gts::VertexId> verts;
 
-  legendrofy_multi_common(lc.get(), me, _eh);
+  legendrofy_multi_common(pMesh, lc.get(), me, verts, _eh);
 
   lc->EvalMulti(me, l_max);
 
   for (Int_t i = 0; i < me.fN; ++i)
   {
-    GtsVertex *v = (GtsVertex*) me.fUserData[i];
+    gts::Vec3 &p = pMesh->geo().position(verts[i]);
     const Double_t fac = 1.0 + me.fMVec[i];
-    v->p.x *= fac; v->p.y *= fac; v->p.z *= fac;
+    p.x *= fac; p.y *= fac; p.z *= fac;
   }
 
   mStampReqTring = Stamp(FID());
@@ -626,48 +678,23 @@ void GTSurf::LegendrofyScaleRandomMulti(Int_t l_max, Double_t abs_scale, Double_
 // Triangle exporter
 //==============================================================================
 
-namespace
-{
-  struct extring_arg
-  {
-    std::map<GtsVertex*, int> m_map;
-    int                  m_count;
-    FILE*                m_out;
-
-    extring_arg() : m_count(0), m_out(0) {}
-  };
-
-  void trivi_vdump(GtsVertex* v, extring_arg* arg)
-  {
-    arg->m_map[v] = arg->m_count;
-    ++arg->m_count;
-    fprintf(arg->m_out, "%lf %lf %lf\n", v->p.x, v->p.y, v->p.z);
-  }
-
-  void trivi_fdump(GtsFace* f, extring_arg* arg)
-  {
-    GtsVertex *a, *b, *c;
-    gts_triangle_vertices(&f->triangle, &a, &b, &c);
-    fprintf(arg->m_out, "%d %d %d\n", arg->m_map[a], arg->m_map[b], arg->m_map[c]);
-  }
-}
-
 void GTSurf::ExportTring(const Text_t* fname)
 {
   // Dumps vertices/triangles in a trivial format.
 
-  if (pSurf == 0) return;
+  if (pMesh == 0) return;
+
+  std::vector<Double_t> verts;
+  std::vector<Int_t>    faces;
+  GetTriangles(verts, faces);
 
   FILE* f = (fname) ? fopen(fname, "w") : stdout;
 
-  fprintf(f, "%u %u\n", gts_surface_vertex_number(pSurf),
-                        gts_surface_face_number(pSurf));
-
-  extring_arg arg;
-  arg.m_out = f;
-
-  gts_surface_foreach_vertex(pSurf, (GtsFunc) trivi_vdump, &arg);
-  gts_surface_foreach_face  (pSurf, (GtsFunc) trivi_fdump, &arg);
+  fprintf(f, "%zu %zu\n", verts.size() / 3, faces.size() / 3);
+  for (size_t i = 0; i < verts.size(); i += 3)
+    fprintf(f, "%lf %lf %lf\n", verts[i], verts[i + 1], verts[i + 2]);
+  for (size_t i = 0; i < faces.size(); i += 3)
+    fprintf(f, "%d %d %d\n", faces[i], faces[i + 1], faces[i + 2]);
 
   if (fname) fclose(f);
 }
@@ -677,38 +704,24 @@ void GTSurf::ExportTring(const Text_t* fname)
 // Making of split surfaces
 //==============================================================================
 
-namespace
-{
-  void vertex_min_z_fixer(GtsVertex* v, Double_t* min_z)
-  {
-    if (v->p.z < *min_z) v->p.z = *min_z;
-  }
-
-  void vertex_max_z_fixer(GtsVertex* v, Double_t* max_z)
-  {
-    if (v->p.z > *max_z) v->p.z = *max_z;
-  }
-
-}
-
 void GTSurf::MakeZSplitSurfaces(Double_t z_split, const TString& stem, Bool_t save_p)
 {
   static const Exc_t _eh("GTSurf::SaveZSplitSurfaces ");
 
-  GtsSurface *sup = 0, *sdn = 0;
+  GTS::Mesh *sup = 0, *sdn = 0;
 
   {
     GLensReadHolder _rdlck(this);
 
-    if (!pSurf)
+    if (!pMesh)
       throw _eh + "Surface is null.";
 
     sup = CopySurface();
     sdn = CopySurface();
   }
 
-  gts_surface_foreach_vertex(sup, (GtsFunc) vertex_min_z_fixer, &z_split);
-  gts_surface_foreach_vertex(sdn, (GtsFunc) vertex_max_z_fixer, &z_split);
+  foreach_position(*sup, [&](gts::Vec3& p) { if (p.z < z_split) p.z = z_split; });
+  foreach_position(*sdn, [&](gts::Vec3& p) { if (p.z > z_split) p.z = z_split; });
 
   GTSurf *gsup = new GTSurf(GForm("Upper %s", GetName()));
   gsup->ReplaceSurface(sup);
@@ -737,47 +750,28 @@ void GTSurf::MakeZSplitSurfaces(Double_t z_split, const TString& stem, Bool_t sa
 
 //==============================================================================
 
-namespace
-{
-  struct ct_ud
-  {
-    TTree    *t;
-    HPointD  *p;
-    ct_ud() : t(0), p(0) {}
-  };
-
-  void ct_filler(GtsVertex* v, ct_ud* ud)
-  {
-    ud->p->Set(v->p.x, v->p.y, v->p.z);
-    ud->t->Fill();
-  }
-}
-
 TTree* GTSurf::MakeHPointDTree(const TString& name, const TString& title)
 {
-  if (pSurf == 0) return 0;
-
-  ct_ud ud;
+  if (pMesh == 0) return 0;
 
   TTree *t = new TTree(name, title);
   t->SetDirectory(0);
 
-  ud.t = t;
-  t->Branch("P", &ud.p);
+  HPointD *p = 0;
+  t->Branch("P", &p);
 
-  gts_surface_foreach_vertex(pSurf, (GtsFunc) ct_filler, &ud);
+  foreach_position(*pMesh, [&](gts::Vec3& v) { p->Set(v.x, v.y, v.z); t->Fill(); });
 
-  return ud.t;
+  return t;
 }
 
 TTree* GTSurf::MakeMultiEvalTree(const TString& name, const TString& title)
 {
-  if (pSurf == 0) return 0;
+  if (pMesh == 0) return 0;
 
   LegendreCoefs::MultiEval me;
-  me.Init(gts_surface_vertex_number(pSurf));
-  gts_surface_foreach_vertex(pSurf, (GtsFunc) lcme_filler, &me);
-  me.Sort();
+  std::vector<gts::VertexId> verts;
+  lcme_fill(*pMesh, me, verts);
 
   TTree *t = new TTree(name, title);
   t->SetDirectory(0);

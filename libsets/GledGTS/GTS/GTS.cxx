@@ -11,65 +11,45 @@
 using namespace gled;
 
 
-GtsSurface* gled::MakeDefaultSurface()
+GTS::Mesh::Mesh() :
+  m_geo(std::make_unique<gts::Geometrium>()), m_surf(&m_geo->new_surface())
+{}
+
+GTS::Mesh* GTS::Mesh::Copy() const
 {
-  return gts_surface_new(gts_surface_class (), gts_face_class (),
-			 gts_edge_class (),    gts_vertex_class ());
+  auto g = std::make_unique<gts::Geometrium>();
+  gts::Surface& s = g->import(*m_geo, *m_surf);
+  return new Mesh(std::move(g), s);
 }
 
 //==============================================================================
 
-namespace
+void gled::InvertSurface(gts::Surface& s)
 {
-  int face_inverter(GtsFace* f, int* dum)
-  {
-    GtsEdge* egg = f->triangle.e1;
-    f->triangle.e1 = f->triangle.e2;
-    f->triangle.e2 = egg;
-    return 0;
-  }
-}
-
-void gled::InvertSurface(GtsSurface* s)
-{
-  gts_surface_foreach_face(s, (GtsFunc)face_inverter, 0);
+  for (gts::FaceId f : s.faces())
+    s.geometrium().revert_face(f);
 }
 
 //==============================================================================
 
-namespace
+void gled::TransformSurfaceVertices(gts::Surface& s, const ZTrans& t)
 {
-  void vertex_transformer(GtsVertex* v, ZTrans* t)
-  {
-    t->MultiplyVec3IP(&v->p.x, 1);
-  }
-
-  void vertex_rotator(GtsVertex* v, ZTrans* t)
-  {
-    t->RotateVec3IP(&v->p.x);
-  }
-
+  gts::Geometrium& g = s.geometrium();
+  for (gts::VertexId v : s.vertices())
+    t.MultiplyVec3IP(&g.position(v).x, 1);
 }
 
-void gled::TransformSurfaceVertices(GtsSurface* s, ZTrans* t)
+void gled::RotateSurfaceVertices(gts::Surface& s, const ZTrans& t)
 {
-  gts_surface_foreach_vertex(s, (GtsFunc) vertex_transformer, t);
-}
-
-void gled::RotateSurfaceVertices(GtsSurface* s, ZTrans* t)
-{
-  gts_surface_foreach_vertex(s, (GtsFunc) vertex_rotator, t);
+  gts::Geometrium& g = s.geometrium();
+  for (gts::VertexId v : s.vertices())
+    t.RotateVec3IP(&g.position(v).x);
 }
 
 //==============================================================================
 
-void gled::WriteSurfaceToFile(GtsSurface* s, const TString& file)
+void gled::WriteSurfaceToFile(const gts::Surface& s, const TString& file)
 {
-  FILE* fp = fopen(file, "w");
-  if (!fp) {
+  if ( ! gts::write_gts(s, std::filesystem::path(file.Data())))
     ISerr(GForm("WriteSurfaceToFile Can not open file '%s'.", file.Data()));
-    return;
-  }
-  gts_surface_write(s, fp);
-  fclose(fp);
 }

@@ -10,12 +10,13 @@
 #include <Stones/SRange.h>
 #include <Glasses/LegendreCoefs.h>
 
+#include <vector>
+
 class TTree;
 
-struct _GtsSurface;
-typedef struct _GtsSurface GtsSurface;
-
 namespace gled {
+
+namespace GTS { class Mesh; }
 
 
 class GTSurf : public ZNode
@@ -29,7 +30,7 @@ private:
   void	_init();
 
 protected:
-  GtsSurface*	pSurf;        //! X{g}
+  GTS::Mesh*	pMesh;        //! X{g}
 
   TString		mFile;        // X{GS}   7 Filor()
 
@@ -51,14 +52,19 @@ protected:
   Double_t              mPostBoolPerimeter;  // X{GS} 7 Value(-join=>1)
   Double_t              mPostBoolLength;     // X{GS} 7 Value()
 
-  void legendrofy_multi_common(LegendreCoefs* lc, LegendreCoefs::MultiEval& me, const Exc_t eh);
-
 public:
   GTSurf(const Text_t* n="GTSurf", const Text_t* t=0) : ZNode(n,t) { _init(); }
+  virtual ~GTSurf();
 
-  void ReplaceSurface(GtsSurface* new_surf);
-  GtsSurface* CopySurface();
-  GtsSurface* DisownSurface();
+  // The mesh passes with ownership.
+  void ReplaceSurface(GTS::Mesh* new_mesh);
+  GTS::Mesh* CopySurface();
+  GTS::Mesh* DisownSurface();
+
+  // Vertices as x, y, z triplets and faces as triplets of vertex indices,
+  // for code that does not include gts-cxx, which needs C++23.
+  void GetTriangles(std::vector<Double_t>& verts, std::vector<Int_t>& faces);
+  void SetTriangles(const std::vector<Double_t>& verts, const std::vector<Int_t>& faces);
 
   Double_t GetArea() const;
   Double_t GetXYArea() const;

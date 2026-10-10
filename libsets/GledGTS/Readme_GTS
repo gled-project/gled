@@ -1,6 +1,6 @@
 GTS
 
-GTS libset is a trivial wrapper over GTS library.
+GledGTS wraps gts-cxx, the C++ rewrite of the GTS library.
 
 License: GNU LGPL version 3 or later (LGPL-3.0-or-later).
 Info: http://www.gled.org/ and http://gts.sf.net/
