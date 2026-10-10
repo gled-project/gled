@@ -527,6 +527,11 @@ void tringula(Int_t mode=2)
   }
   printf("\nGUI initialization complete.\n");
 
+  // An input method such as ibus delays key events.
+  Gled::theOne->SetInputMethod(false);
+  printf("tringula.C: X input method off for direct key events; "
+         "Gled::theOne->SetInputMethod(true) turns it back on.\n");
+
   Gled::theOne->LockFltk();
 
   dumper->SetPupil(g_pupil);

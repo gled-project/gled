@@ -17,6 +17,8 @@
 #include <GL/glew.h>
 #include <FL/Fl_Gl_Window.H>
 
+#include <set>
+
 namespace gled {
 
 class GTime;
@@ -76,6 +78,8 @@ protected:
   FBO*          mFBO;
 
   GThread*      mCreationThread;
+
+  std::set<int> mKeysDown;
 
   Bool_t        bStereo;
   Double_t      mFAspect, mFNear, mFFar, mFTop, mFBot, mFLft, mFRgt;
@@ -153,6 +157,8 @@ public:
   virtual int  overlay_pick(A_Rnr::Fl_Event& e);
   virtual int  overlay_pick_and_deliver(A_Rnr::Fl_Event& e);
   virtual int  handle_overlay(A_Rnr::Fl_Event& e);
+  virtual int  deliver_rnr_event(A_Rnr::Fl_Event& e);
+  void         release_keys();
 
 
   //--------------------------------------------------------------

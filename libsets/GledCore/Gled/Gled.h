@@ -163,6 +163,7 @@ public:
 
   virtual void LockFltk()   {}
   virtual void UnlockFltk() {}
+  virtual void SetInputMethod(Bool_t on) {} // X input method, eg ibus, on or off.
 
   static Gled* theOne;
   static Int_t GetExitStatus();

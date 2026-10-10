@@ -27,6 +27,9 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Button.H>
 #include <FL/x.H>
+#if !defined(__APPLE__) and !defined(WIN32)
+#include <X11/XKBlib.h>
+#endif
 
 #include <GL/glew.h>
 
@@ -116,6 +119,17 @@ namespace
 
 void Pupil::_build()
 {
+#if !defined(__APPLE__) and !defined(WIN32)
+  // A held key repeats key-downs only, without fake key-ups.
+  static bool detectable_autorepeat = false;
+  if ( ! detectable_autorepeat)
+  {
+    fl_open_display();
+    XkbSetDetectableAutoRepeat(fl_display, True, 0);
+    detectable_autorepeat = true;
+  }
+#endif
+
   // Hack to keep the same GL context opened all the time.
   // GLEW init is done in the draw() of the context holder.
 
@@ -317,6 +331,8 @@ void Pupil::AbsorbRay(Ray& ray)
 	draw();
 	valid(1);
 	swap_buffers();
+	// Let fltk handle input before the next frame's rays.
+	fImg->fEye->BreakManageLoop();
       }
       else if (bSignalDumpFinish)
       {
@@ -1330,16 +1346,6 @@ void Pupil::setup_rnr_event(int ev, A_Rnr::Fl_Event& e)
   e.fIsOverlay  = false;
   e.fCurrentNSE = e.fNameStack.end();
   e.fZMin = e.fZMax = 0;
-
-  // Fltk sometimes still sends keyup events from auto-repeat --
-  // transform them to keydown. Apparently this only happens when
-  // running with multiple threads as I could not reproduce this
-  // behaviour in a minimal fltk program.
-  //
-  // This requires round trip to X server, so the thing should be fixed
-  // in fltk (or wherever).
-  if (ev == FL_KEYUP && Fl::get_key(e.fKey))
-    e.fEvent = FL_KEYDOWN;
 }
 
 int Pupil::overlay_pick(A_Rnr::Fl_Event& e)
@@ -1525,6 +1531,26 @@ int Pupil::handle(int ev)
     return Fl_Gl_Window::handle(ev);
   }
 
+  // Take keyboard focus, also on click, so that keys come as FL_KEYDOWN / FL_KEYUP.
+  if (ev == FL_FOCUS)
+  {
+    return 1;
+  }
+  if (ev == FL_PUSH && Fl::focus() != this)
+  {
+    take_focus();
+  }
+
+  // One key-down and one key-up per key press; drop autorepeat key-downs.
+  if (ev == FL_KEYDOWN && ! mKeysDown.insert(Fl::event_key()).second)
+  {
+    return 1;
+  }
+  if (ev == FL_KEYUP && mKeysDown.erase(Fl::event_key()) == 0)
+  {
+    return 1;
+  }
+
   // Maybe should check for something else?
   if (!valid())
   {
@@ -1543,43 +1569,17 @@ int Pupil::handle(int ev)
 
   make_current();
 
+  if (ev == FL_UNFOCUS)
+  {
+    release_keys();
+    return 1;
+  }
+
   A_Rnr::Fl_Event e;
   setup_rnr_event(ev, e);
-  mDriver->PreEventHandling(e);
-
-  // Call handle in PupilInfo_GL_Rnr ... this should mostly return 0
-  // but can process some keyboard shortcuts.
-  // It also copies some variables to the other side.
+  if (deliver_rnr_event(e))
   {
-    if (mDriver->GetRnr(fImg)->Handle(mDriver, e))
-      return 1;
-  }
-
-  if (mOverlayImg && bShowOverlay)
-  {
-    try
-    {
-      e.fIsOverlay = true;
-      if (handle_overlay(e))
-      {
-	check_driver_redraw();
-	return 1;
-      }
-      // Restore event-type - handle_overlay() can change MOVE to ENTER/LEAVE.
-      e.fEvent     = ev;
-      e.fIsOverlay = false;
-    }
-    catch (Exc_t &exc)
-    {
-      printf("%sexception in handle_overlay: '%s'.\n", _eh.Data(), exc.Data());
-      return 1;
-    }
-  }
-
-  if (mEventHandlerImg && bUseEventHandler)
-  {
-    if (mDriver->GetRnr(*mEventHandlerImg)->Handle(mDriver, e))
-      return 1;
+    return 1;
   }
 
   if (ev == FL_ENTER || ev == FL_LEAVE)
@@ -1745,6 +1745,70 @@ int Pupil::handle(int ev)
   } // switch(ev)
 
   return 0;
+}
+
+int Pupil::deliver_rnr_event(A_Rnr::Fl_Event& e)
+{
+  // Delivers the event to the renderers: PupilInfo, overlay, event handler.
+
+  static const Exc_t _eh("Pupil::deliver_rnr_event ");
+
+  const int ev = e.fEvent;
+
+  mDriver->PreEventHandling(e);
+
+  // Call handle in PupilInfo_GL_Rnr ... this should mostly return 0
+  // but can process some keyboard shortcuts.
+  // It also copies some variables to the other side.
+  {
+    if (mDriver->GetRnr(fImg)->Handle(mDriver, e))
+      return 1;
+  }
+
+  if (mOverlayImg && bShowOverlay)
+  {
+    try
+    {
+      e.fIsOverlay = true;
+      if (handle_overlay(e))
+      {
+	check_driver_redraw();
+	return 1;
+      }
+      // Restore event-type - handle_overlay() can change MOVE to ENTER/LEAVE.
+      e.fEvent     = ev;
+      e.fIsOverlay = false;
+    }
+    catch (Exc_t &exc)
+    {
+      printf("%sexception in handle_overlay: '%s'.\n", _eh.Data(), exc.Data());
+      return 1;
+    }
+  }
+
+  if (mEventHandlerImg && bUseEventHandler)
+  {
+    if (mDriver->GetRnr(*mEventHandlerImg)->Handle(mDriver, e))
+      return 1;
+  }
+
+  return 0;
+}
+
+void Pupil::release_keys()
+{
+  // Sends key-ups for the keys still down when the focus goes elsewhere.
+
+  std::set<int> keys;
+  keys.swap(mKeysDown);
+  for (int k : keys)
+  {
+    A_Rnr::Fl_Event e;
+    setup_rnr_event(FL_KEYUP, e);
+    e.fKey  = k;
+    e.fText = "";
+    deliver_rnr_event(e);
+  }
 }
 
 /**************************************************************************/

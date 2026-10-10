@@ -243,6 +243,9 @@ void TSPupilInfo::EnactExtendioSpiritio(Extendio* ext)
 
   assert_MIR_presence(_eh, MC_IsDetached);
 
+  if (ext == 0)
+    throw _eh + "null extendio.";
+
   AList *uidir = dynamic_cast<AList*>(mQueen->FindLensByPath("var/glassui"));
   if (!uidir)
     throw _eh + "uidir not found.";

@@ -7,8 +7,6 @@
 #include <Rnr/GL/GLRnrDriver.h>
 #include <RnrBase/Fl_Event_Enums.h>
 #include <Glasses/AlSource.h>
-#include <Eye/Eye.h>
-#include <Stones/ZMIR.h>
 
 #include <GL/glew.h>
 
@@ -51,13 +49,6 @@ void Spiritio_GL_Rnr::AbsorbRay(Ray& ray)
 
 int Spiritio_GL_Rnr::Handle(RnrDriver* rd, Fl_Event& ev)
 {
-  if (ev.fEvent == FL_LEAVE && ! ev.fIsOverlay)
-  {
-    std::unique_ptr<ZMIR> mir(mSpiritio->S_ReleaseAllKeys());
-    fImg->fEye->Send(*mir);
-    return 1;
-  }
-
   if ( ! mSpiritio->bActive)
   {
     return 0;

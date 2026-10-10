@@ -37,6 +37,7 @@ protected:
   Fl_OutputPack*  wOutPack;
 
   Bool_t	  bGuiUp;
+  Bool_t	  bHasInputMethod;
 
   Fl_Button	     *wSwmResizer;
   Fl_Value_Input *wDebugLevel;	// X{g}
@@ -95,6 +96,7 @@ public:
 
   virtual void LockFltk();
   virtual void UnlockFltk();
+  virtual void SetInputMethod(Bool_t on);
 
   static GledGUI* theOne;
 

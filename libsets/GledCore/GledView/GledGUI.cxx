@@ -25,6 +25,12 @@
 #include <FL/fl_draw.H>
 #include <FL/fl_ask.H>
 #include <FL/Fl_Image.H>
+#ifndef __APPLE__
+#include <FL/x.H>
+
+// FLTK's input context, null when no input method could be opened.
+extern XIC fl_xim_ic;
+#endif
 
 using namespace gled;
 
@@ -191,6 +197,12 @@ GledGUI::GledGUI() :
 
   // Call this early on, should be before first show().
   Fl::visual(FL_DOUBLE|FL_RGB);
+
+#ifndef __APPLE__
+  bHasInputMethod = (fl_xim_ic != 0);
+#else
+  bHasInputMethod = false;
+#endif
 }
 
 void GledGUI::ParseArguments(Bool_t allow_daemon)
@@ -568,6 +580,18 @@ void GledGUI::LockFltk()
 
 void GledGUI::UnlockFltk()
 {
+  Fl::awake();
+  Fl::unlock();
+}
+
+void GledGUI::SetInputMethod(Bool_t on)
+{
+  // Fl::enable_im() crashes without an input method.
+  Fl::lock();
+  if ( ! on)
+    Fl::disable_im();
+  else if (bHasInputMethod)
+    Fl::enable_im();
   Fl::awake();
   Fl::unlock();
 }
