@@ -337,7 +337,7 @@ void GTSurf::Tessellate(UInt_t order, Bool_t mid_edge)
 
   while (order--)
   {
-    gts::tessellate(pMesh->surf(), mid_edge ? gts::Splitter(mid_edge_splitter) : gts::Splitter());
+    gts::tessellate(pMesh->surf(), mid_edge ? gts::Splitter(mid_edge_splitter) : gts::Splitter(gts::unit_sphere_arc_midvertex));
   }
   pMesh->geo().collect();
   mStampReqTring = Stamp(FID());
@@ -457,7 +457,7 @@ void GTSurf::GenerateSphereThetaConst(UInt_t order)
 
   for (UInt_t cgo = 1; cgo < order; ++cgo)
   {
-    gts::tessellate(m->surf());
+    gts::tessellate(m->surf(), gts::unit_sphere_arc_midvertex);
 
     LegendreCoefs::MultiEval me;
     lcme_fill(*m, me, verts);
