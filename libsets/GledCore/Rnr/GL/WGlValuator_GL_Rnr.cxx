@@ -34,6 +34,9 @@ Double_t WGlValuator_GL_Rnr::get_value()
   GET_OR_RET_VAL(ZGlass, lens, *V.mCbackAlpha, 0);
 
   char* addr = (char*)lens + V.mDataMember->GetOffset();
+  // A reference member, eg Dynamico::mV, stores a pointer at its offset.
+  if (V.mDataMember->Property() & kIsReference)
+    addr = *(char**)addr;
   return GledNS::peek_value(addr, V.mDataMember->GetDataType()->GetType());
 }
 
