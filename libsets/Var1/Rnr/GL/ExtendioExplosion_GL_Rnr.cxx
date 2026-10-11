@@ -40,7 +40,7 @@ void ExtendioExplosion_GL_Rnr::Draw(RnrDriver* rd)
   const Float_t bf = 0.6f + 0.7f*nt;
   const Float_t sf = 1.0f + 1.2f*nt;
 
-  Float_t *bb = mExtendioExplosion->GetExtendio()->get_tring_tvor()->mCtrExtBox;
+  const Float_t *bb = EE.mCtrExtBox;
 
   glTranslatef(bb[0], bb[1], 0.0f);
 

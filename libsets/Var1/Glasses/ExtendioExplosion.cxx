@@ -6,6 +6,9 @@
 #include "Extendio.h"
 
 #include "Tringula.h"
+#include "TriMesh.h"
+
+#include <algorithm>
 
 using namespace gled;
 
@@ -26,6 +29,7 @@ ExtendioExplosion::ExtendioExplosion(const Text_t* n, const Text_t* t) :
   bUseDispList  = true;
 
   mExtendio = 0;
+  std::fill_n(mCtrExtBox, 6, 0.0f);
 }
 
 ExtendioExplosion::~ExtendioExplosion()
@@ -36,6 +40,8 @@ ExtendioExplosion::~ExtendioExplosion()
 void ExtendioExplosion::SetExtendio(Extendio* ext)
 {
   mExtendio = ext;
+  const Float_t *bb = ext->get_tring_tvor()->mCtrExtBox;
+  std::copy_n(bb, 6, mCtrExtBox);
 }
 
 //==============================================================================

@@ -451,7 +451,7 @@ void tringula(Int_t mode=2)
 
   printf("Initializing GUI "); fflush(stdout);
 
-  eye();
+  ASSERT_MACRO(gled_view_globals);
 
   /**************************************************************************/
 

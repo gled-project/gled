@@ -17,6 +17,7 @@ class ExtendioExplosion : public Explosion
 
 protected:
   Extendio    *mExtendio; //! X{g}
+  Float_t      mCtrExtBox[6]; //! The extendio's mesh box; its links are cleared while this is still drawn.
 
 public:
   ExtendioExplosion(const Text_t* n="ExtendioExplosion", const Text_t* t=0);

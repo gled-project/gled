@@ -962,6 +962,13 @@ void Pupil::label_window(const char* l)
 // fltk draw
 /**************************************************************************/
 
+void Pupil::flush()
+{
+  // Without auto-redraw, redraw rays bring the frames; a draw between them can see lenses mid-change.
+  if (bAutoRedraw || bDumpImage || !valid())
+    Fl_Gl_Window::flush();
+}
+
 void Pupil::draw()
 {
   static const Exc_t _eh("Pupil::draw ");

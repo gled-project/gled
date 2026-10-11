@@ -150,6 +150,7 @@ public:
 
   virtual void label_window(const char* l=0);
   virtual void draw();
+  virtual void flush();
   // virtual void draw_overlay();
   virtual int  handle(int ev);
 
