@@ -54,7 +54,7 @@ void ZNode_GL_Rnr::SetImg(OS::ZGlassImg* newimg)
 
 /**************************************************************************/
 
-void ZNode_GL_Rnr::CreateRnrScheme(RnrDriver* rd)
+void ZNode_GL_Rnr::CreateRnrScheme(RnrDriver* rd, RnrScheme* sch)
 {
   ZNode& N = *mNode;
   GNS::RnrBits& rb = fImg->GetCI()->fDefRnrCtrl.fRnrBits;
@@ -77,19 +77,19 @@ void ZNode_GL_Rnr::CreateRnrScheme(RnrDriver* rd)
     // printf("Calculated %d %d for '%s'.\n", pre, post, mRnrModLD->GetToGlass()->GetName());
     if(pre) {
       A_Rnr* rm_rnr = rd->GetRnr(mRnrModLD->GetToImg());
-      (*mRnrScheme)[pre].push_back(RnrElement(rm_rnr, &A_Rnr::PreDraw));
-      (*mRnrScheme)[post].push_back(RnrElement(rm_rnr, &A_Rnr::PostDraw));
+      sch->Add(pre,  rm_rnr, RnrOp::K_PreDraw);
+      sch->Add(post, rm_rnr, RnrOp::K_PostDraw);
     }
   }
 
-  crs_links(rd, mRnrScheme);
+  crs_links(rd, sch);
   if(N.bRnrSelf) {
-    crs_self(rd, mRnrScheme);
+    crs_self(rd, sch);
   } else {
-    (*mRnrScheme)[rb.fSelf[0]].push_back(RnrElement(this, &A_Rnr::PreDraw));
-    (*mRnrScheme)[rb.fSelf[2]].push_back(RnrElement(this, &A_Rnr::PostDraw));
+    sch->Add(rb.fSelf[0], this, RnrOp::K_PreDraw);
+    sch->Add(rb.fSelf[2], this, RnrOp::K_PostDraw);
   }
-  if(N.bRnrElements) crs_elements(rd, mRnrScheme);
+  if(N.bRnrElements) crs_elements(rd, sch);
 }
 
 /**************************************************************************/

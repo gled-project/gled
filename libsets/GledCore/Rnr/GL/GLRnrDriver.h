@@ -68,6 +68,10 @@ public:
   virtual void BeginRender();
   virtual void EndRender();
 
+  ZTrans        mViewAtBegin;
+  virtual void  check_entry_frame(A_Rnr* rnr);
+  virtual void  check_culled(A_Rnr* rnr, const Float_t* ctr_ext);
+
   // NameStack
   virtual void BeginPick();
   virtual void EndPick();

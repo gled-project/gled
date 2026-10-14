@@ -7,6 +7,8 @@
 
 #include <Eye/Ray.h>
 
+#include <algorithm>
+
 using namespace gled;
 
 
@@ -18,10 +20,27 @@ const int A_Rnr::sMaxRnrLevel = 7;
 
 /**************************************************************************/
 
+A_Rnr::~A_Rnr()
+{
+  delete mProgram;
+}
+
 void A_Rnr::AbsorbRay(Ray& ray)
 {
   if (ray.fEyeBits & Ray::EB_StructuralChange)
-    DropRnrScheme();
+    MarkProgramDirty();
+}
+
+void A_Rnr::MarkProgramDirty()
+{
+  if (mProgram) mProgram->bDirty = true;
+}
+
+bool A_Rnr::HasOutsideEffects()
+{
+  // Draw-only classes are rnr-mods; as list elements they set state with no restore.
+  const GNS::RnrBits& rb = fImg->GetCI()->fDefRnrCtrl.fRnrBits;
+  return rb.fSelf[1] && ! rb.fSelf[0] && ! rb.fSelf[2];
 }
 
 /**************************************************************************/
@@ -44,7 +63,7 @@ void A_Rnr::crs_links(RnrDriver* rd, RnrScheme* sch)
 
     if (rb.ListOn() && limg->IsList())
     {
-      sch->AddListChangeObserver(limg, this);
+      sch->AddDep(limg);
       rd->FillRnrScheme(sch, limg->GetElementImgs(), rb);
     }
   }
@@ -70,20 +89,11 @@ void A_Rnr::crs_elements(RnrDriver* rd, RnrScheme* sch)
   }
 }
 
-void A_Rnr::CreateRnrScheme(RnrDriver* rd)
+void A_Rnr::CreateRnrScheme(RnrDriver* rd, RnrScheme* sch)
 {
-  crs_links(rd, mRnrScheme);
-  crs_self(rd, mRnrScheme);
-  crs_elements(rd, mRnrScheme);
-}
-
-void A_Rnr::DropRnrScheme()
-{
-  if (mRnrScheme)
-  {
-    delete mRnrScheme;
-    mRnrScheme = 0;
-  }
+  crs_links(rd, sch);
+  crs_self(rd, sch);
+  crs_elements(rd, sch);
 }
 
 /**************************************************************************/
@@ -128,27 +138,86 @@ void A_Rnr::Fl_Event::dump()
 }
 
 /**************************************************************************/
-// ListChangeObserver
-/**************************************************************************/
-
-void ListChangeObserver::AbsorbRay(Ray& ray)
-{
-  using namespace RayNS;
-  if (ray.fRQN > RQN_list_begin && ray.fRQN < RQN_list_end)
-    mRnr->DropRnrScheme();
-}
-
-/**************************************************************************/
 // RnrScheme
 /**************************************************************************/
 
-RnrScheme::~RnrScheme()
+void RnrScheme::AddDep(OS::ZGlassImg* img)
 {
-  for (OS::lpA_View_i i=fListObservers.begin(); i!=fListObservers.end(); ++i)
-    delete *i;
+  if (std::find(fDeps.begin(), fDeps.end(), img) == fDeps.end())
+    fDeps.push_back(img);
 }
 
-void RnrScheme::AddListChangeObserver(OS::ZGlassImg* list, A_Rnr* client)
+void RnrScheme::Flatten(vRnrOp_t& ops) const
 {
-  fListObservers.push_back(new ListChangeObserver(list, client));
+  ops.clear();
+  for (int l = 1; l <= A_Rnr::sMaxRnrLevel; ++l)
+    ops.insert(ops.end(), fLevels[l].begin(), fLevels[l].end());
+}
+
+/**************************************************************************/
+// RnrProgram
+/**************************************************************************/
+
+RnrProgram::DepObserver::~DepObserver()
+{
+  // The image is dying and takes its views along.
+  if (fProg)
+  {
+    fProg->mDeps.erase(std::find(fProg->mDeps.begin(), fProg->mDeps.end(), this));
+    fProg->bDirty = true;
+  }
+}
+
+void RnrProgram::DepObserver::AbsorbRay(Ray& ray)
+{
+  if (fProg && (ray.fEyeBits & Ray::EB_StructuralChange))
+    fProg->bDirty = true;
+}
+
+RnrProgram::~RnrProgram()
+{
+  for (auto d : mDeps)
+  {
+    d->fProg = 0;
+    delete d;
+  }
+}
+
+void RnrProgram::Set(RnrDriver* rd, const RnrScheme& sch)
+{
+  sch.Flatten(fOps);
+
+  for (auto i = mDeps.begin(); i != mDeps.end(); )
+  {
+    if (std::find(sch.fDeps.begin(), sch.fDeps.end(), (*i)->fImg) == sch.fDeps.end())
+    {
+      (*i)->fProg = 0;
+      rd->RetireView(*i);
+      i = mDeps.erase(i);
+    }
+    else ++i;
+  }
+  for (auto img : sch.fDeps)
+  {
+    if (std::find_if(mDeps.begin(), mDeps.end(),
+                     [img](DepObserver* d) { return d->fImg == img; }) == mDeps.end())
+      mDeps.push_back(new DepObserver(img, this));
+  }
+
+  bDirty = false;
+}
+
+bool RnrProgram::Matches(const RnrScheme& sch) const
+{
+  vRnrOp_t ops;
+  sch.Flatten(ops);
+  if (ops != fOps || sch.fDeps.size() != mDeps.size())
+    return false;
+  for (auto img : sch.fDeps)
+  {
+    if (std::find_if(mDeps.begin(), mDeps.end(),
+                     [img](DepObserver* d) { return d->fImg == img; }) == mDeps.end())
+      return false;
+  }
+  return true;
 }

@@ -74,6 +74,13 @@ void GLRnrDriver::BeginRender()
   
   RnrDriver::BeginRender();
 
+  {
+    ZTrans proj;
+    glGetDoublev(GL_PROJECTION_MATRIX, proj.Array());
+    glGetDoublev(GL_MODELVIEW_MATRIX,  mViewAtBegin.Array());
+    SetFrustum(proj * mViewAtBegin);
+  }
+
   if(mFaderStack == 0) {
     // Make default rnrmod.
     mFaderStack = &mRMStacks.insert(std::make_pair(ZGlColorFader::FID(), RMStack())).first->second;
@@ -110,6 +117,49 @@ void GLRnrDriver::EndRender()
   }
 
   RnrDriver::EndRender();
+}
+
+void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
+{
+  // The cull test assumes the GL modelview is the view times the PM stack.
+  ZTrans mv, exp = mViewAtBegin * ToGCS();
+  glGetDoublev(GL_MODELVIEW_MATRIX, mv.Array());
+  Double_t d = 0, s = 0;
+  for (int i = 0; i < 16; ++i)
+  {
+    d = TMath::Max(d, TMath::Abs(mv[i] - exp[i]));
+    s = TMath::Max(s, TMath::Abs(exp[i]));
+  }
+  if (d > 1e-4 * TMath::Max(s, 1.0))
+    printf("GLRnrDriver::check_entry_frame GL modelview differs from the PM stack at %s.\n",
+           rnr->fImg->fLens->Identify().Data());
+}
+
+void GLRnrDriver::check_culled(A_Rnr* rnr, const Float_t* ce)
+{
+  // All box corners, in GL's clip coordinates, must be outside one plane.
+  ZTrans mv, proj;
+  glGetDoublev(GL_MODELVIEW_MATRIX,  mv.Array());
+  glGetDoublev(GL_PROJECTION_MATRIX, proj.Array());
+  ZTrans m = proj * mv;
+  int outside[6] = { 0, 0, 0, 0, 0, 0 };
+  for (int k = 0; k < 8; ++k)
+  {
+    Double_t p[3], q[4];
+    for (int i = 0; i < 3; ++i)
+      p[i] = ce[i] + ((k >> i) & 1 ? ce[3+i] : -ce[3+i]);
+    for (int i = 0; i < 4; ++i)
+      q[i] = m.CM(i,0)*p[0] + m.CM(i,1)*p[1] + m.CM(i,2)*p[2] + m.CM(i,3);
+    for (int i = 0; i < 3; ++i)
+    {
+      if (q[i] < -q[3]) ++outside[2*i];
+      if (q[i] >  q[3]) ++outside[2*i + 1];
+    }
+  }
+  for (int i = 0; i < 6; ++i)
+    if (outside[i] == 8) return;
+  printf("GLRnrDriver::check_culled cull of %s not confirmed.\n",
+         rnr->fImg->fLens->Identify().Data());
 }
 
 /**************************************************************************/

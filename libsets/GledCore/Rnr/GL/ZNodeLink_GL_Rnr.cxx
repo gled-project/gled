@@ -46,13 +46,14 @@ void ZNodeLink_GL_Rnr::SetImg(OS::ZGlassImg* newimg)
 
 /**************************************************************************/
 
-void ZNodeLink_GL_Rnr::CreateRnrScheme(RnrDriver* rd)
+void ZNodeLink_GL_Rnr::CreateRnrScheme(RnrDriver* rd, RnrScheme* sch)
 {
   if(mLensLD && mLensLD->GetToGlass()) {
+    sch->AddDep(mLensLD->GetToImg());
     A_Rnr* lens_rnr = rd->GetRnr(mLensLD->GetToImg());
-    lens_rnr->crs_links(rd, mRnrScheme);
+    lens_rnr->crs_links(rd, sch);
   }
-  PARENT::CreateRnrScheme(rd);
+  PARENT::CreateRnrScheme(rd, sch);
 }
 
 /**************************************************************************/

@@ -14,6 +14,10 @@
 #include <Glasses/ZGlass.h>
 #include <Glasses/ZNode.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+
 using namespace gled;
 
 
@@ -33,12 +37,35 @@ RnrDriver::RnrDriver(Eye* e, const TString& r) : mEye(e), mRnrName(r)
 
   mBotPMSE.bTo = true; mBotPMSE.bFrom = true; // Bottom PMSE holds the identity.
 
+  bCheckPrograms = getenv("GLED_RNR_CHECK") != 0;
+
+  const char* cull = getenv("GLED_RNR_CULL");
+  bCulling   = ! (cull && cull[0] == '0');
+  mCullCount = 0;
+  bFrustumOK = false;
+
+  mTraceFile = 0;
+  mRnrDepth  = 0;
+  if (const char* prefix = getenv("GLED_RNR_TRACE"))
+  {
+    static int s_count = 0;
+    mTraceFile = fopen(GForm("%s.%d.trace", prefix, s_count++), "w");
+  }
+
   mEye->RegisterImageConsumer(this);
 }
 
 RnrDriver::~RnrDriver()
 {
+  if (mTraceFile) fclose(mTraceFile);
+  flush_retired_views();
   mEye->UnregisterImageConsumer(this);
+}
+
+void RnrDriver::flush_retired_views()
+{
+  for (auto v : mRetiredViews) delete v;
+  mRetiredViews.clear();
 }
 
 /**************************************************************************/
@@ -59,6 +86,11 @@ void RnrDriver::SetZFov(Float_t zfov)
 
 void RnrDriver::ImageDeath(OS::ZGlassImg* img)
 {
+  // The image deletes its views, retired ones included.
+  mRetiredViews.erase(std::remove_if(mRetiredViews.begin(), mRetiredViews.end(),
+                                     [img](OS::A_View* v) { return v->fImg == img; }),
+                      mRetiredViews.end());
+
   hImg2Rnr_i oi = mOwnRnrs.find(img);
   if (oi != mOwnRnrs.end()) {
     delete oi->second;
@@ -71,40 +103,21 @@ void RnrDriver::ImageDeath(OS::ZGlassImg* img)
 void RnrDriver::FillRnrScheme(RnrScheme* rs, A_Rnr* rnr,
 		   const GledNS::RnrBits& bits)
 {
-  vlRnrElement_t& rev = rs->fScheme;
-  if (bits.fSelf[0]) {
-    rev[bits.fSelf[0]].push_back(RnrElement(rnr, &A_Rnr::PreDraw));
-  }
-  if (bits.fSelf[1]) {
-    rev[bits.fSelf[1]].push_back(RnrElement(rnr, &A_Rnr::Draw));
-  }
-  if (bits.fSelf[2]) {
-    rev[bits.fSelf[2]].push_back(RnrElement(rnr, &A_Rnr::PostDraw));
-  }
-  if (bits.fSelf[3]) {
-    rev[bits.fSelf[3]].push_back(RnrElement(rnr, 0));
-  }
+  rs->Add(bits.fSelf[0], rnr, RnrOp::K_PreDraw);
+  rs->Add(bits.fSelf[1], rnr, RnrOp::K_Draw);
+  rs->Add(bits.fSelf[2], rnr, RnrOp::K_PostDraw);
+  rs->Add(bits.fSelf[3], rnr, RnrOp::K_Call);
 }
 
 void RnrDriver::FillRnrScheme(RnrScheme* rs, OS::lpZGlassImg_t* imgs,
 		   const GledNS::RnrBits& bits)
 {
-  vlRnrElement_t& rev = rs->fScheme;
-  if (bits.fList[0]) {
-    for (OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
-      rev[bits.fList[0]].push_back(RnrElement(GetRnr(*img), &A_Rnr::PreDraw));
-  }
-  if (bits.fList[1]) {
-    for (OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
-      rev[bits.fList[1]].push_back(RnrElement(GetRnr(*img), &A_Rnr::Draw));
-  }
-  if (bits.fList[2]) {
-    for (OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
-      rev[bits.fList[2]].push_back(RnrElement(GetRnr(*img), &A_Rnr::PostDraw));
-  }
-  if (bits.fList[3]) {
-    for (OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
-      rev[bits.fList[3]].push_back(RnrElement(GetRnr(*img), 0));
+  static const UChar_t kinds[4] = { RnrOp::K_PreDraw, RnrOp::K_Draw, RnrOp::K_PostDraw, RnrOp::K_Call };
+  for (int k = 0; k < 4; ++k)
+  {
+    if (bits.fList[k])
+      for (OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
+        rs->Add(bits.fList[k], GetRnr(*img), kinds[k]);
   }
 }
 
@@ -143,45 +156,154 @@ A_Rnr* RnrDriver::AssertDefRnr(OS::ZGlassImg* img)
   return rnr;
 }
 
-void RnrDriver::Render(A_Rnr* rnr)
+UInt_t RnrDriver::sFrameCount = 0;
+
+void RnrDriver::assert_program(A_Rnr* rnr)
 {
-  static const Exc_t _eh("RnrDriver::Render ");
+  static const Exc_t _eh("RnrDriver::assert_program ");
 
-  if (mMaxDepth <= 0) return;
-  --mMaxDepth;
+  if (rnr->mProgram == 0)
+    rnr->mProgram = new RnrProgram;
+  RnrProgram &prog = *rnr->mProgram;
 
-  if (rnr->mRnrScheme == 0)
+  if (prog.bDirty || bCheckPrograms)
   {
-    rnr->mRnrScheme = new RnrScheme;
-    GLensReadHolder _lck(rnr->fImg->fLens);
-    try
+    RnrScheme sch;
     {
-      rnr->CreateRnrScheme(this);
+      GLensReadHolder _lck(rnr->fImg->fLens);
+      rnr->CreateRnrScheme(this, &sch);
     }
-    catch (...)
+    if (prog.bDirty)
     {
-      rnr->DropRnrScheme();
-      throw;
+      prog.Set(this, sch);
+    }
+    else if ( ! prog.Matches(sch))
+    {
+      printf("%sstale program of %s.\n", _eh.Data(), rnr->fImg->fLens->Identify().Data());
+      prog.Set(this, sch);
     }
   }
+}
 
-  for (UChar_t rl=1; rl<=A_Rnr::sMaxRnrLevel; ++rl)
+bool RnrDriver::subtree_clean(A_Rnr* rnr)
+{
+  if (rnr->mProgram == 0 || rnr->mProgram->bDirty)
+    assert_program(rnr);
+  RnrProgram &prog = *rnr->mProgram;
+
+  if (prog.fCleanFrame == sFrameCount)
+    return prog.bClean;
+  prog.fCleanFrame = sFrameCount;
+  prog.bClean      = false; // A cycle counts as not clean.
+
+  for (const RnrOp &op : prog.fOps)
   {
-    lRnrElement_t& re_list = rnr->mRnrScheme->fScheme[rl];
-    for (lRnrElement_i re=re_list.begin(); re!=re_list.end(); ++re)
+    if (op.fKind == RnrOp::K_Call ? ! subtree_clean(op.fRnr) :
+        op.fKind == RnrOp::K_Draw && op.fRnr->HasOutsideEffects())
+      return false;
+  }
+  return prog.bClean = true;
+}
+
+void RnrDriver::Render(A_Rnr* rnr)
+{
+  if (mMaxDepth <= 0) { if (mTraceFile) trace_op(rnr, "cut"); return; }
+
+  assert_program(rnr);
+
+  if (bCulling && bFrustumOK)
+  {
+    Float_t box[6];
+    bool    has_box;
     {
-      if (re->fRnrFoo == 0)
+      GLensReadHolder _lck(rnr->fImg->fLens);
+      has_box = rnr->GetCullBox(this, box);
+    }
+    if (has_box)
+    {
+      if (bCheckPrograms) check_entry_frame(rnr);
+      if ( ! IsVisible(box) && subtree_clean(rnr))
       {
-	// printf("%sDescending to %s, from %s, rl=%d\n", _eh.Data(), re->fRnr->fImg->fLens->Identify().Data(), rnr->fImg->fLens->Identify().Data(), rl);
-	Render(re->fRnr);
-      } else {
-	GLensReadHolder _lck(re->fRnr->fImg->fLens);
-	((re->fRnr)->*(re->fRnrFoo))(this);
+        if (bCheckPrograms) check_culled(rnr, box);
+        if (mTraceFile) trace_op(rnr, "culled");
+        ++mCullCount;
+        return;
       }
     }
   }
 
+  --mMaxDepth;
+  if (mTraceFile) { trace_op(rnr, "enter"); ++mRnrDepth; }
+
+  for (const RnrOp &op : rnr->mProgram->fOps)
+  {
+    if (op.fKind == RnrOp::K_Call)
+    {
+      Render(op.fRnr);
+    }
+    else
+    {
+      if (mTraceFile)
+	trace_op(op.fRnr, op.fKind == RnrOp::K_PreDraw ? "pre" :
+		          op.fKind == RnrOp::K_Draw    ? "draw" : "post");
+      GLensReadHolder _lck(op.fRnr->fImg->fLens);
+      switch (op.fKind)
+      {
+        case RnrOp::K_PreDraw:  op.fRnr->PreDraw(this);  break;
+        case RnrOp::K_Draw:     op.fRnr->Draw(this);     break;
+        case RnrOp::K_PostDraw: op.fRnr->PostDraw(this); break;
+      }
+    }
+  }
+
+  if (mTraceFile) --mRnrDepth;
   ++mMaxDepth;
+}
+
+void RnrDriver::SetFrustum(const ZTrans& m)
+{
+  // Gribb and Hartmann: plane = row 3 +- row i of the clip matrix.
+  for (int i = 0; i < 3; ++i)
+  {
+    for (int j = 0; j < 4; ++j)
+    {
+      mFrustum[2*i    ][j] = m.CM(3, j) + m.CM(i, j);
+      mFrustum[2*i + 1][j] = m.CM(3, j) - m.CM(i, j);
+    }
+  }
+  bFrustumOK = true;
+}
+
+bool RnrDriver::IsVisible(const Float_t* ce)
+{
+  // Global axis-aligned box enclosing the local one.
+  const ZTrans &t = ToGCS();
+  Double_t c[3], e[3];
+  for (int i = 0; i < 3; ++i)
+  {
+    c[i] = t.CM(i, 3);
+    e[i] = 0;
+    for (int j = 0; j < 3; ++j)
+    {
+      c[i] += t.CM(i, j) * ce[j];
+      e[i] += std::abs(t.CM(i, j)) * ce[3 + j];
+    }
+  }
+  for (int p = 0; p < 6; ++p)
+  {
+    const Double_t *n = mFrustum[p];
+    if (n[0]*c[0] + n[1]*c[1] + n[2]*c[2] + n[3] +
+        std::abs(n[0])*e[0] + std::abs(n[1])*e[1] + std::abs(n[2])*e[2] < 0)
+      return false;
+  }
+  return true;
+}
+
+void RnrDriver::trace_op(A_Rnr* rnr, const char* op)
+{
+  ZGlass *lens = rnr->fImg->fLens;
+  mTrace += GForm("%*s%s %d %s '%s'\n", 2*mRnrDepth, "", op, lens->GetSaturnID(),
+                  lens->VGlassInfo()->fName.Data(), lens->GetName());
 }
 
 /**************************************************************************/
@@ -190,13 +312,24 @@ void RnrDriver::Render(A_Rnr* rnr)
 void RnrDriver::BeginRender()
 {
   ++mRnrCount;
+  ++sFrameCount;
+  mCullCount = 0;
+  bFrustumOK = false;
   mPMStack.push_back(&mBotPMSE);
+  if ( ! mRetiredViews.empty() && mEye->GetCurrentRay() == 0)
+    flush_retired_views();
+  if (mTraceFile) { mTrace.clear(); mRnrDepth = 0; }
 }
 
 
 void RnrDriver::EndRender()
 {
   mPMStack.pop_back();
+  if (mTraceFile && mTraceHashes.insert(std::hash<std::string>()(mTrace)).second)
+  {
+    fprintf(mTraceFile, "=== frame\n%s", mTrace.c_str());
+    fflush(mTraceFile);
+  }
 }
 
 /**************************************************************************/

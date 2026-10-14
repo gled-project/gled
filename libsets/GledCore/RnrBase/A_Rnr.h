@@ -7,11 +7,14 @@
 
 #include <Eye/OptoStructs.h>
 
+#include <vector>
+
 namespace gled {
 
 class ZGlass;
 class RnrDriver;
 class RnrScheme;
+class RnrProgram;
 
 class A_Rnr : public OptoStructs::A_View
 {
@@ -59,8 +62,8 @@ public:
   };
 
 protected:
-  RnrScheme* mRnrScheme;
-  bool       bOnePerRnrDriver;
+  RnrProgram* mProgram;
+  bool        bOnePerRnrDriver;
 
 public:
   void crs_links(RnrDriver* rd, RnrScheme* sch);
@@ -68,13 +71,19 @@ public:
   void crs_elements(RnrDriver* rd, RnrScheme* sch);
 
 public:
-  A_Rnr() : OptoStructs::A_View(0), mRnrScheme(0), bOnePerRnrDriver(false)
+  A_Rnr() : OptoStructs::A_View(0), mProgram(0), bOnePerRnrDriver(false)
   {}
+  virtual ~A_Rnr();
 
   virtual void AbsorbRay(Ray& ray);
 
-  virtual void CreateRnrScheme(RnrDriver* rd);
-  virtual void DropRnrScheme();
+  virtual void CreateRnrScheme(RnrDriver* rd, RnrScheme* sch);
+  void         MarkProgramDirty();
+
+  // Box as centre and half-extents, in the frame current at the lens's entry.
+  virtual bool GetCullBox(RnrDriver* rd, Float_t* ctr_ext) { return false; }
+  // True when a draw changes state for what is drawn after the lens.
+  virtual bool HasOutsideEffects();
 
   virtual void PreDraw(RnrDriver* rd) = 0;
   virtual void Draw(RnrDriver* rd) = 0;
@@ -88,61 +97,72 @@ public:
   static const int sMaxRnrLevel;
 };
 
-typedef void (A_Rnr::*RnrSubDraw_foo)(RnrDriver*); // missing throw (?)
-
 /**************************************************************************/
-// ListChangeObserver
+// RnrOp, RnrScheme, RnrProgram
 /**************************************************************************/
 
-struct ListChangeObserver : public OptoStructs::A_View
+struct RnrOp
 {
-  A_Rnr* mRnr;
+  enum Kind_e { K_PreDraw, K_Draw, K_PostDraw, K_Call };
 
-  ListChangeObserver(OptoStructs::ZGlassImg* list, A_Rnr* client) :
-    OptoStructs::A_View(list), mRnr(client) {}
+  A_Rnr   *fRnr;
+  UChar_t  fKind;
 
-  virtual void AbsorbRay(Ray& ray);
+  RnrOp(A_Rnr* r, UChar_t k) : fRnr(r), fKind(k) {}
+
+  bool operator==(const RnrOp& o) const { return fRnr == o.fRnr && fKind == o.fKind; }
 };
 
-/**************************************************************************/
-// RnrElement
-/**************************************************************************/
+typedef std::vector<RnrOp>  vRnrOp_t;
 
-struct RnrElement
-{
-  A_Rnr*		    fRnr;
-  RnrSubDraw_foo	    fRnrFoo; // If 0, do full descent.
-
-  RnrElement(A_Rnr* r, RnrSubDraw_foo f=0) : fRnr(r), fRnrFoo(f) {}
-};
-
-typedef std::list<RnrElement>		lRnrElement_t;
-typedef std::list<RnrElement>::iterator	lRnrElement_i;
-
-typedef std::vector<lRnrElement_t>		vlRnrElement_t;
-typedef std::vector<lRnrElement_t>::iterator	vlRnrElement_i;
-
-/**************************************************************************/
-// RnrScheme
-/**************************************************************************/
-
-// For optimization of updates, the fScheme could be split
-// into fSelfScheme, fListScheme, fLinksScheme.
-// then different rays would invalidate only the pertinent sub-schemes.
-
+// Seven levels of ops, filled from RnrBits while a program is assembled, and
+// the images other than the lens's own that the assembly read.
 class RnrScheme
 {
 public:
-  std::list<OptoStructs::A_View*>  fListObservers;
-  vlRnrElement_t              fScheme;
+  std::vector<vRnrOp_t>              fLevels;
+  std::vector<OptoStructs::ZGlassImg*> fDeps;
 
-  RnrScheme() : fScheme(A_Rnr::sMaxRnrLevel + 1) {}
-  ~RnrScheme();
+  RnrScheme() : fLevels(A_Rnr::sMaxRnrLevel + 1) {}
 
-  void AddListChangeObserver(OptoStructs::ZGlassImg* list, A_Rnr* client);
+  void Add(int level, A_Rnr* rnr, UChar_t kind)
+  { if (level > 0) fLevels[level].push_back(RnrOp(rnr, kind)); }
 
-  lRnrElement_t& operator[](int i) { return fScheme[i]; }
-}; // endclass RnrScheme
+  void AddDep(OptoStructs::ZGlassImg* img);
+
+  void Flatten(vRnrOp_t& ops) const;
+};
+
+// Flat ops of one lens. A structural ray on the lens or on a dependency marks
+// it dirty; it is reassembled before its next run.
+class RnrProgram
+{
+  struct DepObserver : public OptoStructs::A_View
+  {
+    RnrProgram *fProg;
+
+    DepObserver(OptoStructs::ZGlassImg* img, RnrProgram* p) :
+      OptoStructs::A_View(img), fProg(p) {}
+    virtual ~DepObserver();
+
+    virtual void AbsorbRay(Ray& ray);
+  };
+
+  std::vector<DepObserver*> mDeps;
+
+public:
+  vRnrOp_t fOps;
+  bool     bDirty;
+
+  UInt_t   fCleanFrame; // Frame for which bClean was computed.
+  bool     bClean;      // No op in the subtree has outside effects.
+
+  RnrProgram() : bDirty(true), fCleanFrame(0), bClean(false) {}
+  ~RnrProgram();
+
+  void Set(RnrDriver* rd, const RnrScheme& sch);
+  bool Matches(const RnrScheme& sch) const;
+};
 
 /**************************************************************************/
 // RnrMod & RnrModStore

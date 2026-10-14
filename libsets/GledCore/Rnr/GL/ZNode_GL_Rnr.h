@@ -34,7 +34,7 @@ public:
 
   virtual void SetImg(OptoStructs::ZGlassImg* newimg);
 
-  virtual void CreateRnrScheme(RnrDriver* rd);
+  virtual void CreateRnrScheme(RnrDriver* rd, RnrScheme* sch);
 
   virtual void PreDraw(RnrDriver* rd);
   virtual void PostDraw(RnrDriver* rd);

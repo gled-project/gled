@@ -23,6 +23,8 @@ public:
   Extendio_GL_Rnr(Extendio* idol);
   virtual ~Extendio_GL_Rnr();
 
+  virtual bool GetCullBox(RnrDriver* rd, Float_t* ctr_ext);
+
   virtual void PreDraw(RnrDriver* rd);
   virtual void Draw(RnrDriver* rd);
   virtual void Render(RnrDriver* rd);

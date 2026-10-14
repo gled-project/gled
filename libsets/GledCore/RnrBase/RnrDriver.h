@@ -13,6 +13,8 @@
 
 #include <list>
 #include <stack>
+#include <string>
+#include <unordered_set>
 
 namespace gled {
 
@@ -92,6 +94,38 @@ protected:
 
   hImg2Rnr_t    mOwnRnrs;
 
+  // Views dropped by programs while a ray may be delivered; deleted later.
+  std::vector<OptoStructs::A_View*> mRetiredViews;
+  void flush_retired_views();
+
+  bool          bCheckPrograms;
+
+  void assert_program(A_Rnr* rnr);
+  bool subtree_clean(A_Rnr* rnr);
+
+  //----------------------------------------------------------------
+  // Frustum culling
+
+  Bool_t        bCulling;       // X{gs}
+  UInt_t        mCullCount;     // X{g} Lenses culled in the last render.
+  Bool_t        bFrustumOK;
+  Double_t      mFrustum[6][4]; // Planes in the global frame, normals inwards.
+
+  static UInt_t sFrameCount;
+
+  virtual void check_entry_frame(A_Rnr* rnr) {}
+  virtual void check_culled(A_Rnr* rnr, const Float_t* ctr_ext) {}
+
+  //----------------------------------------------------------------
+  // Frame trace, written when GLED_RNR_TRACE gives a file prefix.
+
+  FILE                      *mTraceFile;
+  std::string                mTrace;
+  std::unordered_set<size_t> mTraceHashes;
+  Int_t                      mRnrDepth;
+
+  void trace_op(A_Rnr* rnr, const char* op);
+
 public:
   RnrDriver(Eye* e, const TString& r);
   virtual ~RnrDriver();
@@ -107,12 +141,17 @@ public:
   void FillRnrScheme(RnrScheme* rs, OptoStructs::lpZGlassImg_t* imgs,
 		     const GledNS::RnrBits& bits);
 
+  void RetireView(OptoStructs::A_View* v) { mRetiredViews.push_back(v); }
+
   virtual A_Rnr* GetLensRnr(ZGlass* lens);
   virtual A_Rnr* AssertDefRnr(OptoStructs::ZGlassImg* img);
   virtual A_Rnr* GetRnr(OptoStructs::ZGlassImg* img)
   { return img->fDefRnr ? img->fDefRnr : AssertDefRnr(img); }
 
   virtual void Render(A_Rnr* img);
+
+  void SetFrustum(const ZTrans& clip_from_global);
+  bool IsVisible(const Float_t* ctr_ext);
 
   virtual void BeginRender();
   virtual void EndRender();

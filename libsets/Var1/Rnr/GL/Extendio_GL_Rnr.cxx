@@ -34,6 +34,17 @@ Extendio_GL_Rnr::~Extendio_GL_Rnr()
 
 /**************************************************************************/
 
+bool Extendio_GL_Rnr::GetCullBox(RnrDriver* rd, Float_t* ctr_ext)
+{
+  if (mExtendio->GetMesh() == 0) return false;
+  Opcode::Point c, e;
+  mExtendio->RefLastAABB().GetCenter(c);
+  mExtendio->RefLastAABB().GetExtents(e);
+  ctr_ext[0] = c.x; ctr_ext[1] = c.y; ctr_ext[2] = c.z;
+  ctr_ext[3] = e.x; ctr_ext[4] = e.y; ctr_ext[5] = e.z;
+  return true;
+}
+
 void Extendio_GL_Rnr::PreDraw(RnrDriver* rd)
 {
   PARENT::PreDraw(rd);

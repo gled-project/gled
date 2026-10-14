@@ -82,6 +82,27 @@ timeout 22 gled --rnr GL --noprompt $GLEDSYS/test/regress/noassert.C
 timeout 22 saturn --noprompt $GLEDSYS/test/regress/noassert.C < /dev/null
 ```
 
+**`rnr_deps.C`** links one Text from two ZNodeLinks, then, through delayed
+MIRs, gives the Text a font, adds a child to it, removes the child and unlinks
+one ZNodeLink. With `GLED_RNR_CHECK=1` the render driver reassembles every
+program each frame and compares it with the cached one, printing `stale
+program` for each invalidation that was missed. `GLED_RNR_TRACE=<prefix>`
+writes each distinct frame, the lenses and calls in order, to
+`<prefix>.<driver>.trace`:
+
+```sh
+cd $GLEDSYS/demos/GledCore
+GLED_RNR_CHECK=1 GLED_RNR_TRACE=/tmp/deps timeout 22 gled --noprompt $GLEDSYS/test/regress/rnr_deps.C
+```
+
+There must be no `stale program` line, and the trace must hold a frame with
+the font's pre and post calls around the Text's draw under each link.
+
+Lenses whose renderer gives a box (so far Extendio, in `tringula.C`) are culled
+against the view frustum; `GLED_RNR_CULL=0` turns that off. Check mode also
+reports a GL modelview that differs from the driver's position stack at a cull
+test, and a culled box whose corners are not all outside one clip plane.
+
 ## demos/
 
 ```sh
