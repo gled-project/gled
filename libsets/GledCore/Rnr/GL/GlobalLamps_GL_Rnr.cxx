@@ -43,6 +43,7 @@ void GlobalLamps_GL_Rnr::PreDraw(RnrDriver* rd)
       Lamp_GL_Rnr* lrnr = dynamic_cast<Lamp_GL_Rnr*>(rd->GetLensRnr(*l));
       if(lrnr==0) {
  std::cout << _eh <<"got 0 lamp rnr.\n";
+	delete tr;
 	continue;
       }
       if(lrnr->LampOn(rd, tr) == 0)

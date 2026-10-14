@@ -54,7 +54,6 @@ protected:
   Int_t	          mHeight;       // X{g}
   Float_t         mAspect;       // X{g}
   Float_t         mZFov;         // X{g}
-  Float_t         mTanHalfZFov;  // X{g}
   Float_t         mNearClip;     // X{gs}
   Float_t         mFarClip;      // X{gs}
 

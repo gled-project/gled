@@ -85,7 +85,7 @@ void GrowingPlant_GL_Rnr::ProcessExpression(RnrDriver* rd)
       }
       else if ((*i).mType == '%')
       {
-        throw ("GrowingPlant_GL_Rnr::ProcessExpression() invalid stack opration.");
+        throw Exc_t("GrowingPlant_GL_Rnr::ProcessExpression() invalid stack opration.");
         cutBranch++;
       }
       else

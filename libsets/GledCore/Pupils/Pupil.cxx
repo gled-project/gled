@@ -238,6 +238,7 @@ Pupil::Pupil(FTW_Shell* shell, OS::ZGlassImg* infoimg, int x, int y, int w, int 
 
 Pupil::~Pupil()
 {
+  Fl::remove_timeout((Fl_Timeout_Handler)redraw_timeout, this);
   if(bAutoRedraw) mShell->UnregisterROARWindow(this);
   delete mDriver;
   delete mCameraView;
@@ -637,6 +638,40 @@ void Pupil::FullScreen(Fl_Window* fsw)
 // Render
 /**************************************************************************/
 
+namespace
+{
+  // GL stack depths before a render, to unwind to after a renderer throws.
+  struct GLStackDepths
+  {
+    GLint fModelView, fProjection, fAttrib, fName;
+
+    GLStackDepths()
+    {
+      glGetIntegerv(GL_MODELVIEW_STACK_DEPTH,  &fModelView);
+      glGetIntegerv(GL_PROJECTION_STACK_DEPTH, &fProjection);
+      glGetIntegerv(GL_ATTRIB_STACK_DEPTH,     &fAttrib);
+      glGetIntegerv(GL_NAME_STACK_DEPTH,       &fName);
+    }
+
+    void Restore(GLRnrDriver* rd)
+    {
+      if (rd->GetInDLRebuild())
+      {
+        glEndList();
+        rd->SetInDLRebuild(false);
+      }
+      GLint d;
+      glMatrixMode(GL_PROJECTION);
+      for (glGetIntegerv(GL_PROJECTION_STACK_DEPTH, &d); d > fProjection; --d) glPopMatrix();
+      glMatrixMode(GL_MODELVIEW);
+      for (glGetIntegerv(GL_MODELVIEW_STACK_DEPTH, &d); d > fModelView; --d) glPopMatrix();
+      for (glGetIntegerv(GL_ATTRIB_STACK_DEPTH, &d); d > fAttrib; --d) glPopAttrib();
+      for (glGetIntegerv(GL_NAME_STACK_DEPTH, &d); d > fName; --d) glPopName();
+      while (rd->SizePM() > 1) rd->PopPM();
+    }
+  };
+}
+
 void Pupil::Render(bool rnr_self, bool rnr_overlay)
 {
   // Calls rnr driver to perform actual rendering.
@@ -652,6 +687,7 @@ void Pupil::Render(bool rnr_self, bool rnr_overlay)
 
   PupilInfo_GL_Rnr* pupil_rnr = dynamic_cast<PupilInfo_GL_Rnr*>(mDriver->GetRnr(fImg));
   pupil_rnr->InitRendering(mDriver);
+  GLStackDepths gl_depths;
   mDriver->BeginRender();
   if (rnr_self)
   {
@@ -662,6 +698,8 @@ void Pupil::Render(bool rnr_self, bool rnr_overlay)
     catch(Exc_t &exc)
     {
       std::cout << _eh << "scene exception: '" << exc << "'.\n";
+      gl_depths.Restore(mDriver);
+      mDriver->SetMaxDepth(mInfo->GetMaxRnrDepth());
     }
   }
   if (bShowOverlay && rnr_overlay && mOverlayImg)
@@ -679,6 +717,7 @@ void Pupil::Render(bool rnr_self, bool rnr_overlay)
     catch (Exc_t &exc)
     {
       std::cout << _eh << "overlay exception: '" << exc << "'.\n";
+      gl_depths.Restore(mDriver);
     }
   }
   mDriver->EndRender();
@@ -1004,8 +1043,8 @@ void Pupil::draw()
       if (mFBO->fW != w() || mFBO->fH != h())
         mFBO->init(w(), h());
     }
-    catch(const char* exc) {
-      printf("%sFBO init failed: %s.\n", _eh.Data(), exc);
+    catch(Exc_t& exc) {
+      printf("%sFBO init failed: %s.\n", _eh.Data(), exc.Data());
     }
 
     if (mImgNTiles > 1)
@@ -1206,6 +1245,7 @@ void Pupil::rnr_default_init()
   { // clear
     const ZColor& c = mInfo->RefClearColor();
     glClearColor(c.r(), c.g(), c.b(), c.a());
+    glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   }
 

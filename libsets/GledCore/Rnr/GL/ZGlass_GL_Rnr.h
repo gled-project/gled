@@ -55,8 +55,8 @@ public:
 #define GET_OR_RET(_t, _v, _p)         _t * _v = _p; if (!_v) return;
 #define GET_OR_RET_VAL(_t, _v, _p, _r) _t * _v = _p; if (!_v) return _r;
 
-#define REF_OR_RET(_t, _v, _p)         _t & _v = *_p; if (!&_v) return;
-#define REF_OR_RET_VAL(_t, _v, _p, _r) _t & _v = *_p; if (!&_v) return _r;
+#define REF_OR_RET(_t, _v, _p)         _t * _v##_ptr = _p; if (!_v##_ptr) return;    _t & _v = *_v##_ptr;
+#define REF_OR_RET_VAL(_t, _v, _p, _r) _t * _v##_ptr = _p; if (!_v##_ptr) return _r; _t & _v = *_v##_ptr;
 
 
 //==============================================================================

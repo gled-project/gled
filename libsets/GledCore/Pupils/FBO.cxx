@@ -37,6 +37,7 @@ void FBO::init(int w, int h)
   static const Exc_t _eh("FBO::init ");
 
   fIsRescaled = false;
+  fWScale = fHScale = 1;
   if (sRescaleToPow2)
   {
     Int_t nw = 1 << TMath::CeilNint(TMath::Log2(w));
@@ -52,7 +53,7 @@ void FBO::init(int w, int h)
 
   if (fFrameBuffer != 0)
   {
-    if (fW == w || fH == h)
+    if (fW == w && fH == h)
       return;
     release();
   }

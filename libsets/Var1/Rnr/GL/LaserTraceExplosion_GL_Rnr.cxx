@@ -38,7 +38,7 @@ void LaserTraceExplosion_GL_Rnr::Draw(RnrDriver* rd)
   const Float_t nt = LTE.mExplodeTime / LTE.mExplodeDuration;
   const Float_t x  = 1.0f - nt;
   glColor4f(x, x, x, x);
-  GL_Float_Holder(GL_LINE_WIDTH, 3.0f, glLineWidth);
+  GL_Float_Holder line_width(GL_LINE_WIDTH, 3.0f, glLineWidth);
 
   PARENT::Draw(rd);
 }

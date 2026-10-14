@@ -14,8 +14,6 @@
 #include <Glasses/ZGlass.h>
 #include <Glasses/ZNode.h>
 
-#include <cmath>
-
 using namespace gled;
 
 
@@ -54,8 +52,7 @@ void RnrDriver::SetWidthHeight(Int_t w, Int_t h)
 
 void RnrDriver::SetZFov(Float_t zfov)
 {
-  mZFov        = zfov;
-  mTanHalfZFov = tanf(0.5f*zfov);
+  mZFov = zfov;
 }
 
 /**************************************************************************/
@@ -156,9 +153,16 @@ void RnrDriver::Render(A_Rnr* rnr)
   if (rnr->mRnrScheme == 0)
   {
     rnr->mRnrScheme = new RnrScheme;
-    rnr->fImg->fLens->ReadLock();
-    rnr->CreateRnrScheme(this);
-    rnr->fImg->fLens->ReadUnlock();
+    GLensReadHolder _lck(rnr->fImg->fLens);
+    try
+    {
+      rnr->CreateRnrScheme(this);
+    }
+    catch (...)
+    {
+      rnr->DropRnrScheme();
+      throw;
+    }
   }
 
   for (UChar_t rl=1; rl<=A_Rnr::sMaxRnrLevel; ++rl)
@@ -171,9 +175,8 @@ void RnrDriver::Render(A_Rnr* rnr)
 	// printf("%sDescending to %s, from %s, rl=%d\n", _eh.Data(), re->fRnr->fImg->fLens->Identify().Data(), rnr->fImg->fLens->Identify().Data(), rl);
 	Render(re->fRnr);
       } else {
-	re->fRnr->fImg->fLens->ReadLock();
+	GLensReadHolder _lck(re->fRnr->fImg->fLens);
 	((re->fRnr)->*(re->fRnrFoo))(this);
-	re->fRnr->fImg->fLens->ReadUnlock();
       }
     }
   }

@@ -56,6 +56,7 @@ void ExtendioExplosion_GL_Rnr::Draw(RnrDriver* rd)
 void ExtendioExplosion_GL_Rnr::PostDraw(RnrDriver* rd)
 {
   glPopMatrix();
+  PARENT::PostDraw(rd);
 }
 
 void ExtendioExplosion_GL_Rnr::Render(RnrDriver* rd)

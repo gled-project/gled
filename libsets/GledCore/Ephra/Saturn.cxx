@@ -2167,7 +2167,7 @@ void Saturn::ray_emitter()
   while (true)
   {
     mRayEmittingCnd.Lock();
-    if (mRayEmittingQueue.empty())
+    while (mRayEmittingQueue.empty())
       mRayEmittingCnd.Wait();
 
     RayQueueEntry_t rqe = mRayEmittingQueue.front();

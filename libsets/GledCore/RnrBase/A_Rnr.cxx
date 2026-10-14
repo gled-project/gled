@@ -44,7 +44,7 @@ void A_Rnr::crs_links(RnrDriver* rd, RnrScheme* sch)
 
     if (rb.ListOn() && limg->IsList())
     {
-      mRnrScheme->AddListChangeObserver(limg, this);
+      sch->AddListChangeObserver(limg, this);
       rd->FillRnrScheme(sch, limg->GetElementImgs(), rb);
     }
   }

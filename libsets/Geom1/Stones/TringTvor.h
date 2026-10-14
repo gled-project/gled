@@ -54,8 +54,8 @@ public:
   Int_t    NVerts() { return mNVerts;    }
   Float_t* Verts()  { return &mVerts[0]; }
   Float_t* Norms()  { return &mNorms[0]; }
-  UChar_t* Cols()   { return &mCols[0];  }
-  Float_t* Texs()   { return &mTexs[0];  }
+  UChar_t* Cols()   { return mCols.data(); }
+  Float_t* Texs()   { return mTexs.data(); }
 
   Float_t* Vertex(Int_t i)  { return &(mVerts[3*i]); }
   Float_t* Normal(Int_t i)  { return &(mNorms[3*i]); }
@@ -89,8 +89,8 @@ public:
   Int_t    NTrings()    { return mNTrings;        }
   Int_t*   Trings()     { return &mTrings[0];     }
   Float_t* TringNorms() { return &mTringNorms[0]; }
-  UChar_t* TringCols()  { return &mTringCols[0];  }
-  Float_t* TringTexs()  { return &mTringTexs[0];  }
+  UChar_t* TringCols()  { return mTringCols.data(); }
+  Float_t* TringTexs()  { return mTringTexs.data(); }
 
   Int_t*   Triangle(Int_t i)       { return &mTrings[3*i];     }
   Float_t* TriangleNormal(Int_t i) { return &mTringNorms[3*i]; }

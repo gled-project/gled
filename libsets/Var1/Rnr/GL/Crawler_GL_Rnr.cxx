@@ -42,7 +42,7 @@ void Crawler_GL_Rnr::Draw(RnrDriver* rd)
     mLaserEnd.Add(ct*cosf(p), ct*sinf(p), sinf(t));
   }
 
-  GL_Float_Holder(GL_LINE_WIDTH, 3.0f, glLineWidth);
+  GL_Float_Holder line_width(GL_LINE_WIDTH, 3.0f, glLineWidth);
   glColor3f(0.0f, 0.0f, 0.0f);
   glBegin(GL_LINES);
   glVertex3fv(mCrawler->RefLaserBeg());
