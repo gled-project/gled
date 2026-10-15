@@ -64,6 +64,8 @@ public:
 protected:
   RnrProgram* mProgram;
   bool        bOnePerRnrDriver;
+  bool        bInRender;      // Between entry and exit of RnrDriver::Render.
+  bool        bCycleReported;
 
 public:
   void crs_links(RnrDriver* rd, RnrScheme* sch);
@@ -71,7 +73,8 @@ public:
   void crs_elements(RnrDriver* rd, RnrScheme* sch);
 
 public:
-  A_Rnr() : OptoStructs::A_View(0), mProgram(0), bOnePerRnrDriver(false)
+  A_Rnr() : OptoStructs::A_View(0), mProgram(0), bOnePerRnrDriver(false),
+            bInRender(false), bCycleReported(false)
   {}
   virtual ~A_Rnr();
 
@@ -107,8 +110,9 @@ struct RnrOp
 
   A_Rnr   *fRnr;
   UChar_t  fKind;
+  Int_t    fPair;  // Index of the matching post or pre op, -1 if none.
 
-  RnrOp(A_Rnr* r, UChar_t k) : fRnr(r), fKind(k) {}
+  RnrOp(A_Rnr* r, UChar_t k) : fRnr(r), fKind(k), fPair(-1) {}
 
   bool operator==(const RnrOp& o) const { return fRnr == o.fRnr && fKind == o.fKind; }
 };
@@ -130,6 +134,7 @@ public:
 
   void AddDep(OptoStructs::ZGlassImg* img);
 
+  // Concatenates the levels and pairs each pre op with the next post op of its renderer.
   void Flatten(vRnrOp_t& ops) const;
 };
 
@@ -153,11 +158,12 @@ class RnrProgram
 public:
   vRnrOp_t fOps;
   bool     bDirty;
+  bool     bUnpaired;   // Some pre or post op has no partner.
 
   UInt_t   fCleanFrame; // Frame for which bClean was computed.
   bool     bClean;      // No op in the subtree has outside effects.
 
-  RnrProgram() : bDirty(true), fCleanFrame(0), bClean(false) {}
+  RnrProgram() : bDirty(true), bUnpaired(false), fCleanFrame(0), bClean(false) {}
   ~RnrProgram();
 
   void Set(RnrDriver* rd, const RnrScheme& sch);

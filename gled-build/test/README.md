@@ -98,6 +98,18 @@ GLED_RNR_CHECK=1 GLED_RNR_TRACE=/tmp/deps timeout 22 gled --noprompt $GLEDSYS/te
 There must be no `stale program` line, and the trace must hold a frame with
 the font's pre and post calls around the Text's draw under each link.
 
+Each pre op of a program is paired with the next post op of the same renderer.
+Check mode prints `unpaired pre` or `unpaired post` when one has no partner;
+such a program is never culled. A renderer reached again inside its own
+subtree is not entered again, and `RnrDriver::Render cycle at` is printed once
+for it. **`rnr_cycle.C`** links a sphere's child back to the sphere. It must
+print the cycle line once and run until the timeout:
+
+```sh
+cd $GLEDSYS/demos/GledCore
+GLED_RNR_CHECK=1 timeout 22 gled --noprompt $GLEDSYS/test/regress/rnr_cycle.C
+```
+
 Lenses whose renderer gives a box (so far Extendio, in `tringula.C`) are culled
 against the view frustum; `GLED_RNR_CULL=0` turns that off. Check mode also
 reports a GL modelview that differs from the driver's position stack at a cull

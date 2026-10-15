@@ -197,6 +197,8 @@ bool RnrDriver::subtree_clean(A_Rnr* rnr)
   prog.fCleanFrame = sFrameCount;
   prog.bClean      = false; // A cycle counts as not clean.
 
+  if (prog.bUnpaired)
+    return false;
   for (const RnrOp &op : prog.fOps)
   {
     if (op.fKind == RnrOp::K_Call ? ! subtree_clean(op.fRnr) :
@@ -206,9 +208,32 @@ bool RnrDriver::subtree_clean(A_Rnr* rnr)
   return prog.bClean = true;
 }
 
+namespace
+{
+  // Cleared also when a renderer throws; Pupil::Render catches.
+  struct InRenderGuard
+  {
+    bool &fFlag;
+    InRenderGuard(bool& f) : fFlag(f) { fFlag = true; }
+    ~InRenderGuard() { fFlag = false; }
+  };
+}
+
 void RnrDriver::Render(A_Rnr* rnr)
 {
   if (mMaxDepth <= 0) { if (mTraceFile) trace_op(rnr, "cut"); return; }
+
+  // Reached again inside its own subtree: its position entry would be pushed twice.
+  if (rnr->bInRender)
+  {
+    if ( ! rnr->bCycleReported)
+    {
+      printf("RnrDriver::Render cycle at %s, not entered again.\n", rnr->fImg->fLens->Identify().Data());
+      rnr->bCycleReported = true;
+    }
+    if (mTraceFile) trace_op(rnr, "cycle");
+    return;
+  }
 
   assert_program(rnr);
 
@@ -233,6 +258,7 @@ void RnrDriver::Render(A_Rnr* rnr)
     }
   }
 
+  InRenderGuard _guard(rnr->bInRender);
   --mMaxDepth;
   if (mTraceFile) { trace_op(rnr, "enter"); ++mRnrDepth; }
 

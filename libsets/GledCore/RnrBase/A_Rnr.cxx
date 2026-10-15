@@ -152,6 +152,21 @@ void RnrScheme::Flatten(vRnrOp_t& ops) const
   ops.clear();
   for (int l = 1; l <= A_Rnr::sMaxRnrLevel; ++l)
     ops.insert(ops.end(), fLevels[l].begin(), fLevels[l].end());
+
+  const Int_t n = ops.size();
+  for (Int_t i = 0; i < n; ++i)
+  {
+    if (ops[i].fKind != RnrOp::K_PreDraw) continue;
+    for (Int_t j = i + 1; j < n; ++j)
+    {
+      if (ops[j].fKind == RnrOp::K_PostDraw && ops[j].fRnr == ops[i].fRnr && ops[j].fPair < 0)
+      {
+        ops[i].fPair = j;
+        ops[j].fPair = i;
+        break;
+      }
+    }
+  }
 }
 
 /**************************************************************************/
@@ -186,6 +201,17 @@ RnrProgram::~RnrProgram()
 void RnrProgram::Set(RnrDriver* rd, const RnrScheme& sch)
 {
   sch.Flatten(fOps);
+
+  bUnpaired = false;
+  for (const RnrOp &op : fOps)
+  {
+    if ((op.fKind != RnrOp::K_PreDraw && op.fKind != RnrOp::K_PostDraw) || op.fPair >= 0)
+      continue;
+    bUnpaired = true;
+    if (rd->CheckMode())
+      printf("RnrProgram::Set unpaired %s of %s.\n", op.fKind == RnrOp::K_PreDraw ? "pre" : "post",
+             op.fRnr->fImg->fLens->Identify().Data());
+  }
 
   for (auto i = mDeps.begin(); i != mDeps.end(); )
   {
