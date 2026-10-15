@@ -10,7 +10,10 @@ namespace gled {
 class Pupil;
 
 // An OpenXR session that renders a pupil's scene into a headset, from an
-// FLTK idle callback. Started by Pupil when GLED_XR is set.
+// FLTK idle callback. Started through PupilInfo::XrStart() or GLED_XR.
+// The grips move, turn and scale the scene, A resets it, the left menu ends.
+// The sticks go to the pupil's event handler through PupilInfo, or fly. The
+// right hand's laser picks with the trigger and shoots with B, as mouse 1 and 3.
 class PupilXr
 {
   struct Impl;
@@ -18,6 +21,9 @@ class PupilXr
 
   void frame();
   bool poll_events();
+  void update_input(long long display_time);
+  void sticks_off();
+  void laser_event(int ev, int button);
   void render_eye(int eye);
 
 public:
@@ -26,6 +32,8 @@ public:
 
   // Needs the pupil's GL context current.
   bool Init();
+  // False when no session runs; then the caller deletes this.
+  bool RequestExit();
 
   static void IdleCallback(void* pxr);
 };

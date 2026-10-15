@@ -80,6 +80,7 @@ protected:
   Int_t		mImgNTiles;
   FBO*          mFBO;
   PupilXr*      mXr;
+  bool          bXrStartPending;
 
   GThread*      mCreationThread;
 

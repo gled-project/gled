@@ -28,7 +28,9 @@ public:
 		      PRQN_camera_home,
 		      PRQN_smooth_camera_home,
 		      PRQN_redraw,
-		      PRQN_dump_image
+		      PRQN_dump_image,
+		      PRQN_xr_start,
+		      PRQN_xr_stop
   };
 
 private:
@@ -125,6 +127,13 @@ protected:
   ZPoint   mMouseRayPos; //! X{R}
   ZPoint   mMouseRayDir; //! X{R}
 
+public:
+  // Headset thumbsticks, left x, y, right x, y, while a headset session runs.
+  Float_t  fXrSticks[4];   //!
+  Bool_t   fXrSticksOn;    //!
+
+protected:
+
   // Direct dump hack.
   GCondition mDirectDumpCond; //!
   // Could have max wait time.
@@ -156,6 +165,10 @@ public:
   void EmitResizeRay();           // X{E} 7 MButt(-join=>1)
   void EmitCameraHomeRay();       // X{E} 7 MButt()
   void EmitSmoothCameraHomeRay(); // X{E} 7 MButt()
+
+  // Headset session of the pupil, through OpenXR.
+  void XrStart();                 // X{E} 7 MButt(-join=>1)
+  void XrStop();                  // X{E} 7 MButt()
 
   void EmitRedrawRay(Bool_t signal_p=false);
   void EmitDumpImageRay(const TString& filename, Int_t n_tiles=1,

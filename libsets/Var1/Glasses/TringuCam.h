@@ -144,6 +144,11 @@ protected:
 
   std::map<Int_t, KeyInfo*> mKeyStateMap;
 
+  // Keys held by headset sticks, inc and dec of each value; the deflection
+  // sets the desired value, as repeated key presses do.
+  Bool_t    bXrKeyDown[8]; //!
+  void      apply_xr_stick(ValueInfo& vi, Float_t a, Int_t k, Float_t fac);
+
   ZLink<ScreenText>  mInfoTxt;   // X{GS} L{}
 
 
@@ -211,6 +216,7 @@ public:
 
   void MouseDown(A_Rnr::Fl_Event& ev);
   void MouseUp();
+  void MouseShoot();
 
   void CalculateMouseRayVectors();
   void MouseRayCollide();

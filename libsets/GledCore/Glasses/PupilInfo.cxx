@@ -71,6 +71,9 @@ void PupilInfo::_init()
   bLiMo2Side = false;
   bBlend     = false;
 
+  for (auto &s : fXrSticks) s = 0;
+  fXrSticksOn = false;
+
   // User interaction and feedback.
   mMSRotFac = 1; mMSMoveFac = 2; mMoveOM = -2; mAccelExp = 0.5;
 
@@ -390,6 +393,24 @@ void PupilInfo::EmitSmoothCameraHomeRay()
   if(mQueen && mSaturn->AcceptsRays()) {
     std::unique_ptr<Ray> ray
       (Ray::PtrCtor(this, PRQN_smooth_camera_home, mTimeStamp, FID()));
+    mQueen->EmitRay(ray);
+  }
+}
+
+void PupilInfo::XrStart()
+{
+  if(mQueen && mSaturn->AcceptsRays()) {
+    std::unique_ptr<Ray> ray
+      (Ray::PtrCtor(this, PRQN_xr_start, mTimeStamp, FID()));
+    mQueen->EmitRay(ray);
+  }
+}
+
+void PupilInfo::XrStop()
+{
+  if(mQueen && mSaturn->AcceptsRays()) {
+    std::unique_ptr<Ray> ray
+      (Ray::PtrCtor(this, PRQN_xr_stop, mTimeStamp, FID()));
     mQueen->EmitRay(ray);
   }
 }

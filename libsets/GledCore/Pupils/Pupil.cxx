@@ -196,6 +196,7 @@ void Pupil::_build()
   bSignalDumpFinish = false;
   mFBO              = 0;
   mXr               = 0;
+  bXrStartPending   = false;
 
   mCreationThread   = 0;
 
@@ -314,6 +315,24 @@ void Pupil::AbsorbRay(Ray& ray)
     case PupilInfo::PRQN_smooth_camera_home:
     {
       initiate_smooth_camera_home();
+      break;
+    }
+
+    case PupilInfo::PRQN_xr_start:
+    {
+      // Started from draw(), with the GL context current.
+      bXrStartPending = true;
+      redraw();
+      break;
+    }
+
+    case PupilInfo::PRQN_xr_stop:
+    {
+      if (mXr && ! mXr->RequestExit())
+      {
+        delete mXr;
+        mXr = 0;
+      }
       break;
     }
 
@@ -1037,11 +1056,15 @@ void Pupil::draw()
   if (mCreationThread == 0)
     mCreationThread = GThread::Self();
 
-  // The first pupil drawn takes the headset.
-  static bool s_xr_tried = false;
-  if ( ! s_xr_tried && getenv("GLED_XR"))
+  // With GLED_XR set, the first pupil drawn takes the headset.
+  static bool s_xr_env = getenv("GLED_XR") != 0;
+  if (s_xr_env)
   {
-    s_xr_tried = true;
+    s_xr_env        = false;
+    bXrStartPending = true;
+  }
+  if (bXrStartPending && ! mXr)
+  {
     mXr = new PupilXr(this);
     if (mXr->Init())
     {
@@ -1054,6 +1077,7 @@ void Pupil::draw()
     }
     make_current();
   }
+  bXrStartPending = false;
 
   if (bDumpImage)
   {

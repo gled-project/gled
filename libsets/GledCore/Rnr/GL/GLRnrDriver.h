@@ -41,6 +41,7 @@ protected:
 
   ZPoint                    mMouseRayPos; // X{R}
   ZPoint                    mMouseRayDir; // X{R}
+  bool                      bFixedMouseRay; // Set by a headset pupil, not from the mouse.
 
   //--------------------------------
 
@@ -68,6 +69,11 @@ public:
 
   virtual void BeginRender();
   virtual void EndRender();
+
+  // A ray in the camera-base frame that events use in place of the mouse's.
+  void SetFixedMouseRay(const ZPoint& pos, const ZPoint& dir)
+  { mMouseRayPos = pos; mMouseRayDir = dir; bFixedMouseRay = true; }
+  void ReleaseFixedMouseRay() { bFixedMouseRay = false; }
 
   ZTrans        mViewAtBegin;
 

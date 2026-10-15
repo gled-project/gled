@@ -26,6 +26,7 @@ GLRnrDriver::GLRnrDriver(Eye* e, const TString& r) : RnrDriver(e, r)
   mPickVector.resize(mPickSize);
 
   mBelowMouse = mPushed = mFocus = 0;
+  bFixedMouseRay = false;
 
   const char* stats = getenv("GLED_RNR_STATS");
   mStatsEvery = stats ? atoi(stats) : 0;
@@ -290,6 +291,8 @@ void GLRnrDriver::PreEventHandling(A_Rnr::Fl_Event& e)
       mMPushX[e.fButton] = mMouseX;
       mMPushY[e.fButton] = mMouseY;
     }
+
+    if (bFixedMouseRay) return;
 
     float yext = TMath::Tan(0.5*TMath::DegToRad()*mZFov)*mNearClip;
     float xext = yext*mWidth/mHeight;

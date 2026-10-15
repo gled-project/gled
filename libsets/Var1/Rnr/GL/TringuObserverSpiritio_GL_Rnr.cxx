@@ -52,6 +52,10 @@ int TringuObserverSpiritio_GL_Rnr::Handle(RnrDriver* rd, Fl_Event& ev)
       {
         TC.MouseDown(ev);
       }
+      else if (ev.fButton == 3)
+      {
+        TC.MouseShoot();
+      }
 
       return 1;
     }

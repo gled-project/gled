@@ -87,6 +87,7 @@ void TringuCam::_init()
 
   mStampInterval = 25;
   mStampCount    = 0;
+  for (auto &k : bXrKeyDown) k = false;
   mHeight = 0;
 
   mRayColl.SetCulling   (true);
@@ -344,6 +345,18 @@ void TringuCam::MouseDown(A_Rnr::Fl_Event& ev)
   }
 }
 
+void TringuCam::MouseShoot()
+{
+  // Explodes the Extendio under the mouse ray.
+
+  CalculateMouseRayVectors();
+  Opcode::Ray ray(&mMouseRayPos[0], &mMouseRayDir[0]);
+  Float_t rng = mTringula->RayCollideClosestHit(ray, true);
+  Extendio *ext = mTringula->PickExtendios(ray, rng);
+  if (ext)
+    mSaturn->ShootMIR(S_ExtendioExplode(ext));
+}
+
 void TringuCam::MouseUp()
 {
   bMouseDown = false;
@@ -414,6 +427,17 @@ void TringuCam::TimeTick(Double_t t, Double_t dt)
   // Handle currently pressed keys.
   //
   // Mouse-2 camera rotation is handled in GL_Rnr.
+
+  {
+    // Headset sticks: left for speed and strafe, right for turns and, like
+    // a plane, height (push to go down).
+    const bool    on = *mPupilInfo != 0 && mPupilInfo->fXrSticksOn;
+    const Float_t *s = on ? mPupilInfo->fXrSticks : 0;
+    apply_xr_stick(mFwdBck, on ?  s[1] : 0, 0, 0.26f);
+    apply_xr_stick(mLftRgt, on ? -s[0] : 0, 1, 1.5f);
+    apply_xr_stick(mSpinUp, on ? -s[2] : 0, 2, 0.45f);
+    apply_xr_stick(mUpDown, on ? -s[3] : 0, 3, 0.75f);
+  }
 
   mFwdBck.TimeTick(dt);
   if (mFwdBck.fValue) MoveLF(1, dt*mFwdBck.fValue);
@@ -625,6 +649,34 @@ void TringuCam::ValueInfo::TimeTick(Float_t dt)
   }
 }
 
+void TringuCam::apply_xr_stick(ValueInfo& vi, Float_t a, Int_t k, Float_t fac)
+{
+  const Float_t dead = 0.15f;
+  KeyInfo *keys[2] = { &vi.fIncKey, &vi.fDecKey };
+  for (int i = 0; i < 2; ++i)
+  {
+    KeyInfo &ki   = *keys[i];
+    Bool_t  &held = bXrKeyDown[2*k + i];
+    Float_t  d    = i == 0 ? a : -a;
+    if (d > dead)
+    {
+      ki.fIsDown       = true;
+      ki.fDesiredValue = fac * (d - dead) / (1 - dead) * (i == 0 ? vi.fMaxValue : -vi.fMinValue);
+      held             = true;
+    }
+    else if (held)
+    {
+      // As KeyUp().
+      KeyValueChangeParams &C = *vi.fChangeParams;
+      ki.fIsDown       = false;
+      ki.fDecayTimeout = C.fDesireDecayTimeout;
+      if ( ! keys[1 - i]->fIsDown)
+        vi.fDecayTimeout = C.fValueDecayTimeout;
+      held             = false;
+    }
+  }
+}
+
 //==============================================================================
 
 void TringuCam::ExtendioDetails(Extendio* ext)
@@ -697,6 +749,7 @@ const char* help_text =
   "--------------------------------------------------------------------------------\n"
   "Mouse-1 - select objects\n"
   "Mouse-2 - rotate up/down, left/right\n"
+  "Mouse-3 - explode the object under the mouse\n"
   "Number-widgets can be manipulated by Mouse-drag (M2 - x10, M3 - x100)\n"
   "================================================================================\n"
   "Camera / screen controls\n"
