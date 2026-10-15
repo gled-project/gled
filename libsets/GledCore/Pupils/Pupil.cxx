@@ -4,6 +4,7 @@
 
 #include "Pupil.h"
 #include "FBO.h"
+#include "PupilXr.h"
 #include <Eye/Eye.h>
 #include <GledView/MTW_ClassView.h>
 #include <GledView/FTW_Shell.h>
@@ -34,6 +35,7 @@
 #include <GL/glew.h>
 
 #include <cmath>
+#include <cstdlib>
 
 using namespace gled;
 
@@ -193,6 +195,7 @@ void Pupil::_build()
   bCopyToScreen     = false;
   bSignalDumpFinish = false;
   mFBO              = 0;
+  mXr               = 0;
 
   mCreationThread   = 0;
 
@@ -244,6 +247,7 @@ Pupil::~Pupil()
   delete mCameraView;
   delete mCamera;
   delete [] mPickBuff;
+  delete mXr;
   delete mFBO;
 }
 
@@ -1032,6 +1036,24 @@ void Pupil::draw()
 
   if (mCreationThread == 0)
     mCreationThread = GThread::Self();
+
+  // The first pupil drawn takes the headset.
+  static bool s_xr_tried = false;
+  if ( ! s_xr_tried && getenv("GLED_XR"))
+  {
+    s_xr_tried = true;
+    mXr = new PupilXr(this);
+    if (mXr->Init())
+    {
+      Fl::add_idle(PupilXr::IdleCallback, mXr);
+    }
+    else
+    {
+      delete mXr;
+      mXr = 0;
+    }
+    make_current();
+  }
 
   if (bDumpImage)
   {

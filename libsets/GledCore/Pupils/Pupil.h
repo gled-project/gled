@@ -25,12 +25,15 @@ class GTime;
 class PupilInfo;
 class MTW_ClassView;
 class FBO;
+class PupilXr;
 
 
 class Pupil : public Fl_Gl_Window,
 	      public FTW_SubShell,
 	      public OptoStructs::A_View
 {
+  friend class PupilXr;
+
 private:
   static Fl_Gl_Window* gl_ctx_holder;
   static bool          glew_init_needed;
@@ -76,6 +79,7 @@ protected:
   TString	mImageName;
   Int_t		mImgNTiles;
   FBO*          mFBO;
+  PupilXr*      mXr;
 
   GThread*      mCreationThread;
 

@@ -67,7 +67,7 @@ ${PUPILS_LIB}: ${PUPILS_OBJS} lib/libGledCore_Rnr_GL.${LDEXT}
 	${ECHO} -X- Linking $@
 	${MUTE} ${LD} ${LDSHAREDOPT} ${LDFLAGS} ${PUPILS_OBJS} -o $@ \
 	  ${ROOT_LD_DIR} ${FLTKLIBS} ${GLLIBS} -Llib -l${LIB_SET_NAME}_Rnr_GL \
-	  ${LDFLAGS_ASNEEDED} ${RNR_OWN_LIBS} ${ROOTLIBS}
+	  ${LDFLAGS_ASNEEDED} ${RNR_OWN_LIBS} ${ROOTLIBS} ${PUPILS_XR_LIBS}
 
 #--------------------------------------------------------------
 include ${GLEDSYS}/make/make_targets.inc
@@ -86,3 +86,7 @@ ABOVE_RNR_GL_LIBS += $(shell pkg-config --libs freetype2)
 
 Rnr/GL/FTGL.o Rnr/GL/GLTextNS.o Rnr/GL/Text_GL_Rnr.o Rnr/GL/WGlFrameStyle_GL_Rnr.o \
 Rnr/GL/ZRlFont_GL_Rnr.o : CPPFLAGS += $(shell pkg-config --cflags freetype2)
+
+# OpenXR for the headset pupil (Pupils/PupilXr.cxx).
+PUPILS_XR_LIBS := $(shell pkg-config --libs openxr 2>/dev/null)
+Pupils/PupilXr.o : CPPFLAGS += $(shell pkg-config --cflags openxr 2>/dev/null)
