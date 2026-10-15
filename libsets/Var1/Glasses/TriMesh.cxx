@@ -6,6 +6,7 @@
 #include <Glasses/ParaSurf.h>
 #include <Glasses/RectTerrain.h>
 #include <Glasses/GTSurf.h>
+#include <GTS/TriangleBisection.h>
 #include <Glasses/ZImage.h>
 #include <Glasses/RGBAPalette.h>
 
@@ -293,6 +294,40 @@ void TriMesh::AssertOpcStructs()
 {
   if (mOPCModel == 0 || mOPCMeshIf == 0)
     BuildOpcStructs();
+}
+
+void TriMesh::BuildPatches(Int_t faces_per_patch)
+{
+  static const Exc_t _eh("TriMesh::BuildPatches ");
+
+  assert_tvor(_eh);
+  if (faces_per_patch < 1)
+    throw _eh + "faces_per_patch must be positive.";
+
+  // 2^levels patches, the power of two nearest to nt / faces_per_patch.
+  const Int_t nt = mTTvor->mNTrings;
+  const Int_t levels = nt > faces_per_patch ?
+    TMath::Nint(TMath::Log2(Double_t(nt) / faces_per_patch)) : 0;
+  std::vector<Int_t> tring_patch;
+  GTS::BisectTriangles(mTTvor->Trings(), nt, levels, tring_patch);
+
+  // The complete binary tree in heap order: node k has children 2k+1 and
+  // 2k+2, and node k at depth d covers 2^(levels-d) patches.
+  const Int_t np = 1 << levels;
+  std::vector<TringTvor::PatchNode> tree(2 * np - 1);
+  for (Int_t d = 0, k = 0; d <= levels; ++d)
+    for (Int_t i = 0; i < (1 << d); ++i, ++k)
+    {
+      TringTvor::PatchNode& n = tree[k];
+      n.fNPatches   = 1 << (levels - d);
+      n.fFirstPatch = i * n.fNPatches;
+      n.fChild[0]   = d < levels ? 2 * k + 1 : -1;
+      n.fChild[1]   = d < levels ? 2 * k + 2 : -1;
+    }
+
+  GLensWriteHolder _wlck(this);
+  mTTvor->MakePatches(tring_patch, np, &tree);
+  mStampReqTring = Stamp(FID());
 }
 
 /**************************************************************************/

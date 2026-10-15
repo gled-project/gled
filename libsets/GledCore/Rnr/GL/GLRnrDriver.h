@@ -6,6 +6,7 @@
 #define GledCore_GLRnrDriver_H
 
 #include <RnrBase/RnrDriver.h>
+#include <Gled/GTime.h>
 
 #include <GL/glew.h>
 
@@ -69,8 +70,13 @@ public:
   virtual void EndRender();
 
   ZTrans        mViewAtBegin;
+
+  // Render times, printed every mStatsEvery renders when GLED_RNR_STATS gives it.
+  Int_t         mStatsEvery, mStatsN;
+  Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts;
+  GTime         mStatsStart;
   virtual void  check_entry_frame(A_Rnr* rnr);
-  virtual void  check_culled(A_Rnr* rnr, const Float_t* ctr_ext);
+  virtual void  CheckCulled(const TString& what, const Float_t* ctr_ext);
 
   // NameStack
   virtual void BeginPick();

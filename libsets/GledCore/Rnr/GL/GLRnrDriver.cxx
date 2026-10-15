@@ -12,6 +12,8 @@
 
 #include <TMath.h>
 
+#include <cstdlib>
+
 using namespace gled;
 
 
@@ -24,6 +26,11 @@ GLRnrDriver::GLRnrDriver(Eye* e, const TString& r) : RnrDriver(e, r)
   mPickVector.resize(mPickSize);
 
   mBelowMouse = mPushed = mFocus = 0;
+
+  const char* stats = getenv("GLED_RNR_STATS");
+  mStatsEvery = stats ? atoi(stats) : 0;
+  mStatsN = 0;
+  mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = 0;
 
   mMaxLamps = 8;
   mLamps = new A_Rnr* [mMaxLamps];
@@ -74,11 +81,23 @@ void GLRnrDriver::BeginRender()
   
   RnrDriver::BeginRender();
 
+  if (mStatsEvery > 0) mStatsStart.SetNow();
+
   {
     ZTrans proj;
     glGetDoublev(GL_PROJECTION_MATRIX, proj.Array());
     glGetDoublev(GL_MODELVIEW_MATRIX,  mViewAtBegin.Array());
     SetFrustum(proj * mViewAtBegin);
+
+    // The eye at the origin of eye coordinates, or along +z for orthographic.
+    ZTrans inv(mViewAtBegin);
+    inv.Invert();
+    bool   ortho = proj.CM(3,2) == 0;
+    Double_t e[4];
+    for (int i = 0; i < 3; ++i)
+      e[i] = ortho ? inv.CM(i,2) : inv.CM(i,3);
+    e[3] = ortho ? 0 : 1;
+    SetEyePos(e);
   }
 
   if(mFaderStack == 0) {
@@ -117,6 +136,23 @@ void GLRnrDriver::EndRender()
   }
 
   RnrDriver::EndRender();
+
+  if (mStatsEvery > 0)
+  {
+    glFinish();
+    Double_t ms = 1000 * mStatsStart.TimeUntilNow().ToDouble();
+    mStatsSum += ms;
+    mStatsMax  = TMath::Max(mStatsMax, ms);
+    mStatsCulled      += mCullCount;
+    mStatsCulledParts += mCullPartCount;
+    if (++mStatsN == mStatsEvery)
+    {
+      printf("GLRnrDriver stats: %d renders, mean %.2f ms, max %.2f ms, mean culled %.1f lenses, %.1f parts\n",
+             mStatsN, mStatsSum / mStatsN, mStatsMax, mStatsCulled / mStatsN, mStatsCulledParts / mStatsN);
+      mStatsN = 0;
+      mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = 0;
+    }
+  }
 }
 
 void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
@@ -135,7 +171,7 @@ void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
            rnr->fImg->fLens->Identify().Data());
 }
 
-void GLRnrDriver::check_culled(A_Rnr* rnr, const Float_t* ce)
+void GLRnrDriver::CheckCulled(const TString& what, const Float_t* ce)
 {
   // All box corners, in GL's clip coordinates, must be outside one plane.
   ZTrans mv, proj;
@@ -158,8 +194,7 @@ void GLRnrDriver::check_culled(A_Rnr* rnr, const Float_t* ce)
   }
   for (int i = 0; i < 6; ++i)
     if (outside[i] == 8) return;
-  printf("GLRnrDriver::check_culled cull of %s not confirmed.\n",
-         rnr->fImg->fLens->Identify().Data());
+  printf("GLRnrDriver::CheckCulled cull of %s not confirmed.\n", what.Data());
 }
 
 /**************************************************************************/

@@ -7,7 +7,11 @@
 
 #include <Stones/TringTvor.h>
 
+#include <vector>
+
 namespace gled {
+
+class RnrDriver;
 
 class TringTvor_GL_Rnr
 {
@@ -30,6 +34,16 @@ protected:
   Bool_t       bTriangleStrips;
 
   UChar_t* TriangleColor(Int_t i) const { return &(mCArr[4*i]); }
+
+  std::vector<Int_t>        mCounts;
+  std::vector<const void*>  mOffsets;
+
+  void render_smooth(Int_t t0, Int_t nt, Int_t s0, Int_t ns);
+  void render_flat  (Int_t t0, Int_t nt, Int_t s0, Int_t ns);
+  void render_mixed (Int_t t0, Int_t nt);
+
+  bool faces_away   (const TringTvor::Patch& p, const Double_t* eye) const;
+  void check_away   (const TringTvor::Patch& p, const Double_t* eye, const TString& what) const;
 
 public:
   TringTvor_GL_Rnr(TringTvor* tvor);
@@ -57,6 +71,10 @@ public:
   void RenderSmooth();
   void RenderFlat();
   void RenderMixed();
+
+  // Patches in the frustum and, while GL culls back faces, not facing away.
+  void SelectVisiblePatches(RnrDriver* rd, std::vector<Int_t>& vis, const TString& what);
+  void RenderPatches(const std::vector<Int_t>& vis);
   void EndRender();
 
   // Static, all inclusive methods

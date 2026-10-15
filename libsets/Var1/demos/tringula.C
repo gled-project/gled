@@ -48,6 +48,10 @@ Int_t        num_dynamico              = 250;  // 250
 Int_t        num_flyer                 = 70;   // 70
 Int_t        num_chopper               = 30;   // 30
 
+// Triangles per patch of the terrain, for culling; 0 for none.
+Int_t g_faces_per_patch = 0;
+void build_patches() { if (g_faces_per_patch > 0) trimesh->BuildPatches(g_faces_per_patch); }
+
 void setup_rectangle();
 void setup_triangle();
 void setup_sphere_outside();
@@ -63,8 +67,10 @@ void make_overlay();
 
 const Text_t* trimesh_layout = "ZGlass(Name,Title[22]):TriMesh(M[8],Surf[8],COM,J)";
 
-void tringula(Int_t mode=2)
+void tringula(Int_t mode=2, Int_t faces_per_patch=1000)
 {
+  g_faces_per_patch = faces_per_patch;
+
   gRandom = new TRandom3(0); // Seed 0 means seed with TUUID.
 
   ASSERT_MACRO(sun_demos);
@@ -653,6 +659,7 @@ void setup_rectangle()
   // Setup trimesh
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportRectTerrain(terrain, false);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -687,6 +694,7 @@ void setup_triangle()
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
   parasurf->RandomizeH(trimesh, 4, 1, 0.8, 0, 1.1);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -717,6 +725,7 @@ void setup_sphere_outside()
   // Setup trimesh
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -748,6 +757,7 @@ void setup_sphere_inside()
   // Setup trimesh
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -793,6 +803,7 @@ void setup_torus_outside()
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
   pstor->RandomizeH(trimesh, 20, 2, 0.5);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -835,6 +846,7 @@ void setup_torus_inside()
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
   pstor->RandomizeH(trimesh, 20, 1, 0.8);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -865,6 +877,7 @@ void setup_large_sphere()
   // Setup trimesh
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -897,6 +910,7 @@ void setup_icosahedron()
   trimesh->SetParaSurf(parasurf);
   trimesh->MakeIcosahedron();
   trimesh->ScaleVertices(R);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();
@@ -935,6 +949,7 @@ void setup_test()
   trimesh->SetParaSurf(parasurf);
   trimesh->ImportGTSurf(gtsurf);
   parasurf->RandomizeH(trimesh, 4, 1, 0.8, 0, 1.1);
+  build_patches();
   trimesh->StdSurfacePostImport();
   trimesh->GenerateVertexNormals();
   trimesh->GenerateTriangleNormals();

@@ -213,6 +213,10 @@ public:
   void BuildOpcStructs();
   void AssertOpcStructs();
 
+  // Compact patches of about faces_per_patch triangles, by recursive bisection.
+  // Call it after the vertices are final and before StdSurfacePostImport().
+  void BuildPatches(Int_t faces_per_patch);
+
   // TringTvor interface
   void CalculateBoundingBox();    // X{ED} 7 MButt()
   void GenerateVertexNormals();   // X{ED} 7 MButt()

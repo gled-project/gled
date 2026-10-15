@@ -41,8 +41,9 @@ RnrDriver::RnrDriver(Eye* e, const TString& r) : mEye(e), mRnrName(r)
 
   const char* cull = getenv("GLED_RNR_CULL");
   bCulling   = ! (cull && cull[0] == '0');
-  mCullCount = 0;
+  mCullCount = mCullPartCount = 0;
   bFrustumOK = false;
+  mEyePos[0] = mEyePos[1] = mEyePos[3] = 0; mEyePos[2] = 1;
 
   mTraceFile = 0;
   mRnrDepth  = 0;
@@ -224,7 +225,7 @@ void RnrDriver::Render(A_Rnr* rnr)
       if (bCheckPrograms) check_entry_frame(rnr);
       if ( ! IsVisible(box) && subtree_clean(rnr))
       {
-        if (bCheckPrograms) check_culled(rnr, box);
+        if (bCheckPrograms) CheckCulled(rnr->fImg->fLens->Identify(), box);
         if (mTraceFile) trace_op(rnr, "culled");
         ++mCullCount;
         return;
@@ -299,6 +300,15 @@ bool RnrDriver::IsVisible(const Float_t* ce)
   return true;
 }
 
+void RnrDriver::GetLocalEyePos(Double_t* e)
+{
+  // In the frame on top of the position stack.
+  const ZTrans &t = FromGCS();
+  for (int i = 0; i < 3; ++i)
+    e[i] = t.CM(i,0)*mEyePos[0] + t.CM(i,1)*mEyePos[1] + t.CM(i,2)*mEyePos[2] + t.CM(i,3)*mEyePos[3];
+  e[3] = mEyePos[3];
+}
+
 void RnrDriver::trace_op(A_Rnr* rnr, const char* op)
 {
   ZGlass *lens = rnr->fImg->fLens;
@@ -313,7 +323,7 @@ void RnrDriver::BeginRender()
 {
   ++mRnrCount;
   ++sFrameCount;
-  mCullCount = 0;
+  mCullCount = mCullPartCount = 0;
   bFrustumOK = false;
   mPMStack.push_back(&mBotPMSE);
   if ( ! mRetiredViews.empty() && mEye->GetCurrentRay() == 0)

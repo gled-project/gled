@@ -103,6 +103,36 @@ against the view frustum; `GLED_RNR_CULL=0` turns that off. Check mode also
 reports a GL modelview that differs from the driver's position stack at a cull
 test, and a culled box whose corners are not all outside one clip plane.
 
+The terrain of `tringula.C(mode, faces_per_patch)` is split into patches of
+about that many triangles (default 1000, 0 for none). Patches are culled by
+their box and, while GL culls back faces, by their normal cone; check mode
+confirms each cone cull triangle by triangle. `GLED_RNR_STATS=<n>` prints the
+mean and maximum render time and the culled lenses and parts every n renders.
+It calls `glFinish`, so measure with vsync off (`__GL_SYNC_TO_VBLANK=0` on
+NVIDIA). The terrain draws flat by default; `regress/tringula_shading.C`, run
+after it, switches to smooth shading, and with `strips=1` to triangle strips:
+
+```sh
+cd $GLEDSYS/demos/Var1
+GLED_RNR_CHECK=1 timeout 22 gled --noprompt 'tringula.C(2,300)' \
+  "$GLEDSYS/test/regress/tringula_shading.C(1,1)"
+```
+
+`run_demos.sh` counts the check-mode reports as failures, so
+`GLED_RNR_CHECK=1 demos/run_demos.sh <outdir>` checks the render programs and
+culling of every demo it runs.
+
+**`patches.C`** builds terrain patches on three GTS spheres with
+`TriMesh::BuildPatches()` and checks the patch table of `TringTvor`: the reorder
+keeps the triangles, the patches tile them, the boxes and normal cones hold
+their triangles, each tree node is its two children, and strips stay inside
+their patches. It must print `patches: all passed`:
+
+```sh
+cd $GLEDSYS/demos/Var1
+timeout 60 saturn --noprompt $GLEDSYS/test/regress/patches.C < /dev/null
+```
+
 ## demos/
 
 ```sh

@@ -15,6 +15,7 @@
 //   per-triangle normals and colors +-> secondary arrays
 //   texture coords (per-vertex)     |
 //   triangle strip data
+//   patches, contiguous runs of triangles with bounds for culling
 //
 // Serialization should mostly work. Secondary data is streamed as
 // well.  As triangle-attributes (normals, colors) are usually
@@ -23,7 +24,7 @@
 // using the tring-tvor as it also has the AdEnlightenment() virtual where
 // post-serialization / pre-usage chores can be performed.
 //
-// Strip-data is not saved, nor is there any indication if it was used.
+// Strip and patch data are not saved, nor is there any indication they were used.
 //
 // Jul 2011
 // This should really be templated for float / double.
@@ -36,6 +37,7 @@
 #include <TMath.h>
 #include <TRandom.h>
 
+#include <atomic>
 #include <cmath>
 
 #include <ACTC/tc.h>
@@ -43,6 +45,10 @@
 using namespace gled;
 
 #define INV3                    0.33333333333333333333f
+
+namespace {
+  std::atomic<UInt_t> s_patch_stamp(0);
+}
 
 void TringTvor::_init()
 {
@@ -52,6 +58,8 @@ void TringTvor::_init()
 
   mNStripEls   = 0;  mStripEls    = 0;  mStripTrings = 0;
   mNStrips     = 0;  mStripBegs   = 0;  mStripLens   = 0;
+
+  mPatchStamp  = 0;
 }
 
 TringTvor::TringTvor() :
@@ -108,6 +116,7 @@ TringTvor::~TringTvor()
 
 void TringTvor::Reset(Int_t nv, Int_t nt)
 {
+  WipePatches();
   DeleteTriangleStrips();
   DeleteSecondaryArrays();
   DeletePrimaryArrays();
@@ -122,6 +131,7 @@ void TringTvor::Reset(Int_t nv, Int_t nt)
 
 void TringTvor::Reset(Int_t nv, Int_t nt, Mode_e normal, Mode_e color, Mode_e texture)
 {
+  WipePatches();
   DeleteTriangleStrips();
   DeleteSecondaryArrays();
   DeletePrimaryArrays();
@@ -189,6 +199,7 @@ Int_t TringTvor::AddVertices(Int_t nv)
   // Returns old number of vertices.
 
   Int_t nold = mNVerts;
+  WipePatches();
   mNVerts += nv;
   mVerts.resize(3*mNVerts);
   if (HasNorms()) MakeNorms();
@@ -203,6 +214,7 @@ Int_t TringTvor::AddTriangles(Int_t nt)
   // Returns old number of triangles.
 
   Int_t nold = mNTrings;
+  WipePatches();
   mNTrings += nt;
   mTrings.resize(3*mNTrings);
   if (HasTringNorms()) MakeTringNorms();
@@ -543,45 +555,70 @@ void TringTvor::GenerateTriangleStrips(Int_t max_verts)
   static const Exc_t _eh("TringTvor::GenerateTriangleStrips ");
 
   std::unordered_map<xx_tring, Int_t> tring_map;
-
-  ACTCData *tc = actcNew();
-  if (tc == 0) throw(_eh + "failed to allocate TC structure.");
-  // actcParami(tc, ACTC_OUT_MIN_FAN_VERTS, is maxint);
-  // actcParami(tc, ACTC_OUT_MAX_PRIM_VERTS, 128);
-  actcParami(tc, ACTC_OUT_MAX_PRIM_VERTS, max_verts);
-  actcParami(tc, ACTC_OUT_HONOR_WINDING, 1);
-  actcBeginInput(tc);
-  for(Int_t t=0; t<mNTrings; ++t)
+  for (Int_t t = 0; t < mNTrings; ++t)
   {
     Int_t* T = Triangle(t);
     tring_map[ xx_tring(T[0], T[1], T[2]) ] = t;
-    actcAddTriangle(tc, T[0], T[1], T[2]);
   }
-  actcEndInput(tc);
 
-  actcBeginOutput(tc);
-  int prim;
-  int v1, v2, v3;
-  int cnt = 0, cntp;
+  int cnt = 0;
   std::list<std::vector<int>* > strip_list;
-  while ((prim = actcStartNextPrim(tc, &v1, &v2)) != ACTC_DATABASE_EMPTY)
-  {
-    cntp = 2;
-    std::vector<int>* vecp = new std::vector<int>;
-    vecp->push_back(v1); vecp->push_back(v2);
-    while (actcGetNextVert(tc, &v3) != ACTC_PRIM_COMPLETE)
-    {
-      vecp->push_back(v3);
-      ++cntp;
-    }
-    strip_list.push_back(vecp);
-    cnt += cntp;
-  }
-  actcEndOutput(tc);
 
-  actcDelete(tc);
+  // Strips of the triangles [t0, t1); returns their number.
+  auto strip_range = [&](Int_t t0, Int_t t1) -> Int_t
+  {
+    ACTCData *tc = actcNew();
+    if (tc == 0) throw(_eh + "failed to allocate TC structure.");
+    // actcParami(tc, ACTC_OUT_MIN_FAN_VERTS, is maxint);
+    actcParami(tc, ACTC_OUT_MAX_PRIM_VERTS, max_verts);
+    actcParami(tc, ACTC_OUT_HONOR_WINDING, 1);
+    actcBeginInput(tc);
+    for (Int_t t = t0; t < t1; ++t)
+    {
+      Int_t* T = Triangle(t);
+      actcAddTriangle(tc, T[0], T[1], T[2]);
+    }
+    actcEndInput(tc);
+
+    actcBeginOutput(tc);
+    int v1, v2, v3;
+    Int_t n = 0;
+    while (actcStartNextPrim(tc, &v1, &v2) != ACTC_DATABASE_EMPTY)
+    {
+      int cntp = 2;
+      std::vector<int>* vecp = new std::vector<int>;
+      vecp->push_back(v1); vecp->push_back(v2);
+      while (actcGetNextVert(tc, &v3) != ACTC_PRIM_COMPLETE)
+      {
+        vecp->push_back(v3);
+        ++cntp;
+      }
+      strip_list.push_back(vecp);
+      cnt += cntp;
+      ++n;
+    }
+    actcEndOutput(tc);
+
+    actcDelete(tc);
+    return n;
+  };
 
   if (mNStripEls || mNStrips) DeleteTriangleStrips();
+
+  if (HasPatches())
+  {
+    Int_t first = 0;
+    for (Patch& p : mPatches)
+    {
+      p.fFirstStrip = first;
+      p.fNStrips    = p.fNT > 0 ? strip_range(p.fFirstT, p.fFirstT + p.fNT) : 0;
+      first        += p.fNStrips;
+    }
+  }
+  else
+  {
+    strip_range(0, mNTrings);
+  }
 
   mNStripEls = cnt;
   mNStrips   = strip_list.size();
@@ -625,12 +662,173 @@ void TringTvor::GenerateTriangleStrips(Int_t max_verts)
 
 void TringTvor::DeleteTriangleStrips()
 {
+  for (Patch& p : mPatches) p.fFirstStrip = p.fNStrips = 0;
   mNStripEls = 0;
   delete [] mStripEls;    mStripEls  = 0;
   delete [] mStripTrings; mStripTrings = 0;
   mNStrips = 0;
   delete [] mStripBegs;   mStripBegs = 0;
   delete [] mStripLens;   mStripLens = 0;
+}
+
+/**************************************************************************/
+// Patches
+/**************************************************************************/
+
+namespace {
+
+// The rows of v, stride values each, in the order of old_of_new.
+template <typename T>
+void permute_rows(std::vector<T>& v, Int_t stride, const std::vector<Int_t>& old_of_new)
+{
+  if (v.empty()) return;
+  std::vector<T> r(v.size());
+  for (size_t i = 0; i < old_of_new.size(); ++i)
+    std::copy_n(&v[stride * size_t(old_of_new[i])], stride, &r[stride * i]);
+  v.swap(r);
+}
+
+// The vertex range, box and normal cone of the triangles of p; the cone holds
+// the normals by the winding, (v1 - v0) x (v2 - v0), of non-degenerate ones.
+template <typename P>
+void fill_bounds(TringTvor& tt, P& p)
+{
+  p.fConeAxis[0] = p.fConeAxis[1] = 0; p.fConeAxis[2] = 1;
+  p.fConeSin = 1;
+  if (p.fNT == 0)
+  {
+    p.fMinV = 0; p.fMaxV = -1;
+    for (Int_t i = 0; i < 6; ++i) p.fCtrExt[i] = 0;
+    return;
+  }
+
+  Float_t m[3], M[3];
+  Double_t sum[3] = { 0, 0, 0 };
+  p.fMinV = p.fMaxV = tt.Triangle(p.fFirstT)[0];
+  for (Int_t k = 0; k < 3; ++k) m[k] = M[k] = tt.Vertex(p.fMinV)[k];
+  for (Int_t t = p.fFirstT; t < p.fFirstT + p.fNT; ++t)
+  {
+    const Int_t* T = tt.Triangle(t);
+    for (Int_t j = 0; j < 3; ++j)
+    {
+      p.fMinV = std::min(p.fMinV, T[j]);
+      p.fMaxV = std::max(p.fMaxV, T[j]);
+      const Float_t* V = tt.Vertex(T[j]);
+      for (Int_t k = 0; k < 3; ++k) { m[k] = std::min(m[k], V[k]); M[k] = std::max(M[k], V[k]); }
+    }
+    // Twice the area times the unit normal, so the mean is area-weighted.
+    Float_t n[3];
+    const Float_t len = tt.CalculateTriangleNormal(t, n);
+    if (len > 0)
+      for (Int_t k = 0; k < 3; ++k) sum[k] += len * n[k];
+  }
+  for (Int_t k = 0; k < 3; ++k)
+  {
+    p.fCtrExt[k]     = 0.5f * (M[k] + m[k]);
+    p.fCtrExt[k + 3] = 0.5f * (M[k] - m[k]);
+  }
+
+  const Double_t slen = std::sqrt(sum[0]*sum[0] + sum[1]*sum[1] + sum[2]*sum[2]);
+  if (slen <= 0) return;
+  Double_t axis[3] = { sum[0] / slen, sum[1] / slen, sum[2] / slen };
+  Double_t min_cos = 1;
+  for (Int_t t = p.fFirstT; t < p.fFirstT + p.fNT; ++t)
+  {
+    Float_t n[3];
+    if (tt.CalculateTriangleNormal(t, n) > 0)
+      min_cos = std::min(min_cos, axis[0]*n[0] + axis[1]*n[1] + axis[2]*n[2]);
+  }
+  for (Int_t k = 0; k < 3; ++k) p.fConeAxis[k] = axis[k];
+  // A margin for the rounding of the float normals.
+  if (min_cos > 1e-4)
+    p.fConeSin = std::min(1.0, std::sqrt(std::max(0.0, 1 - min_cos * min_cos)) + 1e-4);
+}
+
+} // namespace
+
+void TringTvor::MakePatches(const std::vector<Int_t>& tring_patch, Int_t n_patches,
+                            const std::vector<PatchNode>* tree)
+{
+  static const Exc_t _eh("TringTvor::MakePatches ");
+
+  if ((Int_t) tring_patch.size() != mNTrings)
+    throw _eh + "tring_patch must hold a patch for each triangle.";
+  if (n_patches < 1)
+    throw _eh + "n_patches must be positive.";
+  for (Int_t p : tring_patch)
+    if (p < 0 || p >= n_patches) throw _eh + "a patch index is out of range.";
+  if (tree)
+  {
+    const Int_t nn = tree->size();
+    for (const PatchNode& n : *tree)
+    {
+      if (n.fFirstPatch < 0 || n.fNPatches < 1 || n.fFirstPatch + n.fNPatches > n_patches)
+        throw _eh + "a node's patches are out of range.";
+      for (Int_t c : n.fChild)
+        if (c < -1 || c >= nn) throw _eh + "a node's child is out of range.";
+    }
+  }
+
+  // The triangles by patch, in their order within a patch.
+  std::vector<Int_t> first(n_patches + 1, 0);
+  for (Int_t p : tring_patch) ++first[p + 1];
+  for (Int_t p = 0; p < n_patches; ++p) first[p + 1] += first[p];
+  std::vector<Int_t> old_of_new(mNTrings);
+  {
+    std::vector<Int_t> pos(first.begin(), first.end() - 1);
+    for (Int_t t = 0; t < mNTrings; ++t) old_of_new[pos[tring_patch[t]]++] = t;
+  }
+  permute_rows(mTrings,     3, old_of_new);
+  permute_rows(mTringNorms, 3, old_of_new);
+  permute_rows(mTringCols,  4, old_of_new);
+  permute_rows(mTringTexs,  6, old_of_new);
+
+  // The vertices in the order the triangles first use them; unused ones last.
+  std::vector<Int_t> new_v(mNVerts, -1), old_v;
+  old_v.reserve(mNVerts);
+  for (Int_t& v : mTrings)
+  {
+    if (new_v[v] < 0) { new_v[v] = old_v.size(); old_v.push_back(v); }
+    v = new_v[v];
+  }
+  for (Int_t v = 0; v < mNVerts; ++v)
+    if (new_v[v] < 0) { new_v[v] = old_v.size(); old_v.push_back(v); }
+  permute_rows(mVerts, 3, old_v);
+  permute_rows(mNorms, 3, old_v);
+  permute_rows(mCols,  4, old_v);
+  permute_rows(mTexs,  2, old_v);
+
+  DeleteTriangleStrips();
+
+  mPatches.assign(n_patches, Patch());
+  for (Int_t p = 0; p < n_patches; ++p)
+  {
+    Patch& P = mPatches[p];
+    P.fFirstT = first[p];
+    P.fNT     = first[p + 1] - first[p];
+    P.fFirstStrip = P.fNStrips = 0;
+    fill_bounds(*this, P);
+  }
+
+  mPatchNodes.clear();
+  if (tree)
+  {
+    mPatchNodes = *tree;
+    for (PatchNode& n : mPatchNodes)
+    {
+      n.fFirstT = first[n.fFirstPatch];
+      n.fNT     = first[n.fFirstPatch + n.fNPatches] - n.fFirstT;
+      fill_bounds(*this, n);
+    }
+  }
+  mPatchStamp = ++s_patch_stamp;
+}
+
+void TringTvor::WipePatches()
+{
+  std::vector<Patch>     p; mPatches.swap(p);
+  std::vector<PatchNode> n; mPatchNodes.swap(n);
+  mPatchStamp = ++s_patch_stamp;
 }
 
 /**************************************************************************/

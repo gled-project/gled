@@ -120,6 +120,36 @@ public:
 
   Bool_t   HasTrianlgeStrips() const { return mNStripEls != 0; }
 
+  // Patches: runs of triangles, contiguous after MakePatches(), with the
+  // bounds a renderer culls them by.
+
+  struct Patch
+  {
+    Int_t   fFirstT, fNT;          // triangles [fFirstT, fFirstT + fNT)
+    Int_t   fMinV, fMaxV;          // the vertices they use, inclusive
+    Int_t   fFirstStrip, fNStrips; // into mStripBegs and mStripLens, when strips exist
+    Float_t fCtrExt[6];            // box: centre, half-extents
+    Float_t fConeAxis[3];          // unit; the normals by the winding lie around it
+    Float_t fConeSin;              // sin of the half-angle; 1 for 90 degrees or more
+  };
+
+  struct PatchNode
+  {
+    Int_t   fFirstPatch, fNPatches;
+    Int_t   fChild[2];             // node indices; -1 for a node of one patch
+    Int_t   fFirstT, fNT;
+    Int_t   fMinV, fMaxV;
+    Float_t fCtrExt[6];
+    Float_t fConeAxis[3];
+    Float_t fConeSin;
+  };
+
+  std::vector<Patch>     mPatches;    //!
+  std::vector<PatchNode> mPatchNodes; //! the root is 0; empty without a tree
+  UInt_t                 mPatchStamp; //! new with each MakePatches() and WipePatches(); 0 for never
+
+  Bool_t HasPatches() const { return ! mPatches.empty(); }
+
   // --------------------------------------------------------------
 
   TringTvor();
@@ -189,9 +219,15 @@ public:
   void  FindTrianglesPerVertex(std::vector<Int_t>* trings_per_vert);
   Int_t FindNeighboursPerVertex(std::vector<Int_t>* neighbours);
 
-  // Triangle strips
+  // Triangle strips, patch by patch when there are patches.
   void GenerateTriangleStrips(Int_t max_verts=128);
   void DeleteTriangleStrips();
+
+  // Reorders triangles by tring_patch and vertices by first use, deleting strips.
+  // tree nodes need fFirstPatch, fNPatches and fChild; the rest is filled in.
+  void MakePatches(const std::vector<Int_t>& tring_patch, Int_t n_patches,
+                   const std::vector<PatchNode>* tree = nullptr);
+  void WipePatches();
 
   // Export
   void ExportPovMesh(std::ostream& o, Bool_t smoothp=false);

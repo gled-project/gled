@@ -21,6 +21,8 @@
 
 #include <GL/glew.h>
 
+#include <cstdlib>
+
 using namespace gled;
 
 #define PARENT ZNode_GL_Rnr
@@ -32,6 +34,8 @@ TringuRep_GL_Rnr::TringuRep_GL_Rnr(TringuRep* idol) :
   mTringuRep(idol),
   mTringulaSpy(0),
   mTTvorRnr(0),
+  mTTvor(0),
+  mPatchStamp(0),
   mSoundDir(0)
 {}
 
@@ -65,19 +69,30 @@ AlBuffer* TringuRep_GL_Rnr::find_sound(const TString& effect)
 void TringuRep_GL_Rnr::Draw(RnrDriver* rd)
 {
   TringuRep &TR = * mTringuRep;
+  Tringula  &T  = * TR.GetTringula();
+  TringTvor *TT = T.GetMesh()->GetTTvor();
+
+  if (TT != mTTvor || TT->mPatchStamp != mPatchStamp)
+  {
+    Triangulate(rd);
+    bRebuildDL = true;
+  }
 
   {
     GL_Capability_Switch light(GL_LIGHTING, *TR.mLightField == 0);
     GL_Enum_Holder       shade(GL_SHADE_MODEL, TR.bSmoothShading ? GL_SMOOTH : GL_FLAT, glShadeModel);
 
-    PARENT::Draw(rd);
+    // Culled patches change every frame, so no display list.
+    if (TT->HasPatches())
+      Render(rd);
+    else
+      PARENT::Draw(rd);
   }
 
   // Brutally descend into Tringula's extendios and tubes.
   // Could use render scheme.
   // Even better, could be a bit smart about what needs to be drawn.
   // Results of the last collision detection pass could be used.
-  Tringula  &T = * TR.GetTringula();
   rd->Render(rd->GetLensRnr(*T.mStatos));
   rd->Render(rd->GetLensRnr(*T.mDynos));
   rd->Render(rd->GetLensRnr(*T.mFlyers));
@@ -147,6 +162,18 @@ void TringuRep_GL_Rnr::Triangulate(RnrDriver* rd)
 
   delete mTTvorRnr;
   mTTvorRnr = new TringTvor_GL_Rnr(T.GetMesh()->GetTTvor());
+  mTTvor      = T.GetMesh()->GetTTvor();
+  mPatchStamp = mTTvor->mPatchStamp;
+
+  const TringTvor &TT = * T.GetMesh()->GetTTvor();
+  if (TT.HasPatches() && getenv("GLED_RNR_STATS"))
+  {
+    Double_t sum = 0;
+    for (auto &p : TT.mPatches) sum += p.fConeSin;
+    printf("TringuRep_GL_Rnr::Triangulate %d patches, mean %.0f faces, mean cone sine %.2f\n",
+           (Int_t) TT.mPatches.size(), (Double_t) TT.mNTrings / TT.mPatches.size(),
+           sum / TT.mPatches.size());
+  }
   mTTvorRnr->BeginSetup();
 
   if (TR.bSmoothShading)
@@ -171,7 +198,15 @@ void TringuRep_GL_Rnr::Triangulate(RnrDriver* rd)
 void TringuRep_GL_Rnr::Render(RnrDriver* rd)
 {
   mTTvorRnr->BeginRender();
-  mTTvorRnr->Render();
+  if (mTringuRep->GetTringula()->GetMesh()->GetTTvor()->HasPatches())
+  {
+    mTTvorRnr->SelectVisiblePatches(rd, mVisPatches, mTringuRep->Identify());
+    mTTvorRnr->RenderPatches(mVisPatches);
+  }
+  else
+  {
+    mTTvorRnr->Render();
+  }
   mTTvorRnr->EndRender();
 }
 

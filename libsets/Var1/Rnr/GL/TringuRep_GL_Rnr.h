@@ -37,6 +37,9 @@ protected:
   TringulaSpy   *mTringulaSpy;
 
   TringTvor_GL_Rnr *mTTvorRnr;
+  TringTvor        *mTTvor;      // The one mTTvorRnr was made for.
+  UInt_t            mPatchStamp;
+  std::vector<Int_t> mVisPatches;
 
   typedef std::unordered_multimap<Extendio*, AlSource*> hExt2AlSrc_t;
   typedef hExt2AlSrc_t::iterator                        hExt2AlSrc_i;

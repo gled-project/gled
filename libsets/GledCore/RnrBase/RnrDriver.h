@@ -108,13 +108,14 @@ protected:
 
   Bool_t        bCulling;       // X{gs}
   UInt_t        mCullCount;     // X{g} Lenses culled in the last render.
+  UInt_t        mCullPartCount; // X{g} Parts of lenses culled by their renderers.
   Bool_t        bFrustumOK;
   Double_t      mFrustum[6][4]; // Planes in the global frame, normals inwards.
+  Double_t      mEyePos[4];     // Global; a point, or with w = 0 the direction to the viewer.
 
   static UInt_t sFrameCount;
 
   virtual void check_entry_frame(A_Rnr* rnr) {}
-  virtual void check_culled(A_Rnr* rnr, const Float_t* ctr_ext) {}
 
   //----------------------------------------------------------------
   // Frame trace, written when GLED_RNR_TRACE gives a file prefix.
@@ -152,6 +153,14 @@ public:
 
   void SetFrustum(const ZTrans& clip_from_global);
   bool IsVisible(const Float_t* ctr_ext);
+
+  bool CullingActive() const { return bCulling && bFrustumOK; }
+  bool CheckMode()     const { return bCheckPrograms; }
+  void AddCulledParts(Int_t n) { mCullPartCount += n; }
+  virtual void CheckCulled(const TString& what, const Float_t* ctr_ext) {}
+
+  void SetEyePos(const Double_t* eye) { for (int i = 0; i < 4; ++i) mEyePos[i] = eye[i]; }
+  void GetLocalEyePos(Double_t* eye);
 
   virtual void BeginRender();
   virtual void EndRender();
