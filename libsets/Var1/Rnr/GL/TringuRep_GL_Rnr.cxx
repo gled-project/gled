@@ -192,7 +192,8 @@ void TringuRep_GL_Rnr::Triangulate(RnrDriver* rd)
     mTTvorRnr->RequestTriangleStrips();
   }
 
-  mTTvorRnr->EndSetup();  
+  mTTvorRnr->EndSetup();
+  mTTvorRnr->BuildBuffers();
 }
 
 void TringuRep_GL_Rnr::Render(RnrDriver* rd)

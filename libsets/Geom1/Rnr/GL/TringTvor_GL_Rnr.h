@@ -38,6 +38,12 @@ protected:
   std::vector<Int_t>        mCounts;
   std::vector<const void*>  mOffsets;
 
+  enum Buffer_e { B_Pos, B_Nrm, B_Col, B_Tex, B_Idx, B_N };
+  UInt_t       mBufs[B_N];
+  Bool_t       bBuffers;
+
+  const void* tring_ptr(Int_t t) const;
+
   void render_smooth(Int_t t0, Int_t nt, Int_t s0, Int_t ns);
   void render_flat  (Int_t t0, Int_t nt, Int_t s0, Int_t ns);
   void render_mixed (Int_t t0, Int_t nt);
@@ -47,6 +53,7 @@ protected:
 
 public:
   TringTvor_GL_Rnr(TringTvor* tvor);
+  ~TringTvor_GL_Rnr();
 
   // Setup functions
 
@@ -63,6 +70,9 @@ public:
   void RequestTriangleStrips();
 
   void EndSetup();
+
+  // Uploads the arrays into vertex buffers; not for strips or mixed mode.
+  void BuildBuffers();
 
   // Render functions
 

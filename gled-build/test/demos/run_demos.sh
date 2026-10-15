@@ -8,7 +8,7 @@ BASE_DEMOS="Geom1/eden.C Geom1/gl_tests.C Geom1/images2.C Geom1/images.C Geom1/m
   GledCore/arc.C GledCore/hello_gled.C GledCore/perf_meter.C
   GledCore/sig_test_operator.C GledCore/string_map.C"
 
-BAD='Terminal signal|Segmentation|SEGV|There was a crash|free\(\)|dumped core|corrupt|Assertion|: error: |Error in <|stale program|not confirmed|differs from the PM stack'
+BAD='Terminal signal|Segmentation|SEGV|There was a crash|free\(\)|dumped core|corrupt|Assertion|: error: |Error in <|stale program|not confirmed|differs from the PM stack|GL error 0x'
 
 [ -n "$1" ] || { sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 1; }
 [ -n "$GLEDSYS" ] || { echo "GLEDSYS not set; source build_env.sh"; exit 1; }

@@ -10,6 +10,7 @@
 #include <RnrBase/RnrDriver.h>
 
 #include <cmath>
+#include <cstdlib>
 
 using namespace gled;
 
@@ -21,8 +22,13 @@ using namespace gled;
 typedef TringTvor TT;
 
 TringTvor_GL_Rnr::TringTvor_GL_Rnr(TringTvor* tvor) :
-  mTT(*tvor)
+  mTT(*tvor), bBuffers(false)
 {}
+
+TringTvor_GL_Rnr::~TringTvor_GL_Rnr()
+{
+  if (bBuffers) glDeleteBuffers(B_N, mBufs);
+}
 
 void TringTvor_GL_Rnr::BeginSetup()
 {
@@ -198,9 +204,148 @@ void TringTvor_GL_Rnr::EndSetup()
 
 //==============================================================================
 
+void TringTvor_GL_Rnr::BuildBuffers()
+{
+  if (bBuffers || bTriangleStrips || (mRenderMode != RM_Smooth && mRenderMode != RM_Flat))
+    return;
+  const char* env = getenv("GLED_RNR_VBO");
+  if (env && env[0] == '0')
+    return;
+
+  const Int_t    NT = mTT.mNTrings;
+  const Int_t   *T  = mTT.Trings();
+  const Float_t *P  = mTT.Verts();
+
+  // src: the TringTvor vertex of each buffer vertex; owner: its flat triangle.
+  std::vector<Int_t>   src(mTT.mNVerts), owner, idx;
+  std::vector<Float_t> pos, nrm, tex;
+  std::vector<UChar_t> col;
+  for (Int_t v = 0; v < mTT.mNVerts; ++v) src[v] = v;
+  if (mRenderMode == RM_Smooth)
+  {
+    idx.assign(T, T + 3*NT);
+  }
+  else
+  {
+    // GL_FLAT takes a triangle's colour and lit normal from its last vertex.
+    // Each vertex serves one triangle; triangles left without one get a copy.
+    owner.assign(mTT.mNVerts, -1);
+    idx.resize(3*NT);
+    for (Int_t t = 0; t < NT; ++t)
+    {
+      const Int_t *X = T + 3*t;
+      Int_t k = 0;
+      while (k < 3 && owner[X[k]] >= 0) ++k;
+      Int_t pv;
+      if (k < 3)
+      {
+        pv = X[k];
+        owner[pv] = t;
+      }
+      else
+      {
+        k  = 0;
+        pv = src.size();
+        src.push_back(X[0]);
+        owner.push_back(t);
+      }
+      idx[3*t]     = X[(k + 1) % 3];
+      idx[3*t + 1] = X[(k + 2) % 3];
+      idx[3*t + 2] = pv;
+    }
+  }
+
+  const Int_t nv = src.size();
+  pos.resize(3*nv);
+  nrm.assign(3*nv, 0);
+  if (mCArr) col.assign(4*nv, 255);
+  if (mTArr) tex.resize(2*nv);
+  for (Int_t v = 0; v < nv; ++v)
+  {
+    const Int_t s = src[v];
+    for (Int_t i = 0; i < 3; ++i) pos[3*v + i] = P[3*s + i];
+    if (mTArr) for (Int_t i = 0; i < 2; ++i) tex[2*v + i] = mTArr[2*s + i];
+    const Int_t a = owner.empty() ? s : owner[v];
+    if (a < 0) continue;
+    for (Int_t i = 0; i < 3; ++i) nrm[3*v + i] = mNArr[3*a + i];
+    if (mCArr) for (Int_t i = 0; i < 4; ++i) col[4*v + i] = mCArr[4*a + i];
+  }
+
+  if (getenv("GLED_RNR_CHECK") && ! owner.empty())
+  {
+    // Same corners in the same cyclic order; the last carries the triangle's attributes.
+    for (Int_t t = 0; t < NT; ++t)
+    {
+      const Int_t *X = T + 3*t, *Y = &idx[3*t];
+      bool cyc = false;
+      for (Int_t r = 0; r < 3; ++r)
+        cyc = cyc || (src[Y[r]] == X[0] && src[Y[(r+1)%3]] == X[1] && src[Y[(r+2)%3]] == X[2]);
+      if (owner[Y[2]] != t || ! cyc)
+      {
+        printf("TringTvor_GL_Rnr::BuildBuffers flat triangle %d not confirmed.\n", t);
+        break;
+      }
+    }
+  }
+
+  glGenBuffers(B_N, mBufs);
+  glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Pos]);
+  glBufferData(GL_ARRAY_BUFFER, pos.size() * sizeof(Float_t), pos.data(), GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Nrm]);
+  glBufferData(GL_ARRAY_BUFFER, nrm.size() * sizeof(Float_t), nrm.data(), GL_STATIC_DRAW);
+  if (mCArr)
+  {
+    glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Col]);
+    glBufferData(GL_ARRAY_BUFFER, col.size(), col.data(), GL_STATIC_DRAW);
+  }
+  if (mTArr)
+  {
+    glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Tex]);
+    glBufferData(GL_ARRAY_BUFFER, tex.size() * sizeof(Float_t), tex.data(), GL_STATIC_DRAW);
+  }
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mBufs[B_Idx]);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(Int_t), idx.data(), GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  bBuffers = true;
+}
+
+const void* TringTvor_GL_Rnr::tring_ptr(Int_t t) const
+{
+  // Into the bound index buffer, or into the triangle array.
+  if (bBuffers) return (const void*) (sizeof(Int_t) * 3 * size_t(t));
+  return mTT.mTrings.data() + 3*t;
+}
+
 void TringTvor_GL_Rnr::BeginRender()
 {
   glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+
+  if (bBuffers)
+  {
+    glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Pos]);
+    glVertexPointer(3, GL_FLOAT, 0, 0);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Nrm]);
+    glNormalPointer(GL_FLOAT, 0, 0);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    if (mCArr)
+    {
+      glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Col]);
+      glColorPointer(4, GL_UNSIGNED_BYTE, 0, 0);
+      glEnableClientState(GL_COLOR_ARRAY);
+    }
+    if (mTArr)
+    {
+      glBindBuffer(GL_ARRAY_BUFFER, mBufs[B_Tex]);
+      glTexCoordPointer(2, GL_FLOAT, 0, 0);
+      glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mBufs[B_Idx]);
+    return;
+  }
   glVertexPointer(3, GL_FLOAT, 0, mTT.Verts());
   glEnableClientState(GL_VERTEX_ARRAY);
 
@@ -258,13 +403,18 @@ void TringTvor_GL_Rnr::render_smooth(Int_t t0, Int_t nt, Int_t s0, Int_t ns)
   }
   else
   {
-    glDrawElements(GL_TRIANGLES,  3*nt,
-		   GL_UNSIGNED_INT, mTT.Trings() + 3*t0);
+    glDrawElements(GL_TRIANGLES, 3*nt, GL_UNSIGNED_INT, tring_ptr(t0));
   }
 }
 
 void TringTvor_GL_Rnr::render_flat(Int_t t0, Int_t nt, Int_t s0, Int_t ns)
 {
+  if (bBuffers)
+  {
+    glDrawElements(GL_TRIANGLES, 3*nt, GL_UNSIGNED_INT, tring_ptr(t0));
+    return;
+  }
+
   const Bool_t col_p = mCMode == TT::M_PerTriangle;
 
   if (bTriangleStrips)
@@ -347,6 +497,7 @@ void TringTvor_GL_Rnr::render_mixed(Int_t t0, Int_t nt)
 
 void TringTvor_GL_Rnr::EndRender()
 {
+  if (bBuffers) glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
   glPopClientAttrib();
 }
 
@@ -443,10 +594,10 @@ void TringTvor_GL_Rnr::RenderPatches(const std::vector<Int_t>& vis)
     }
     if (nt > 0)
     {
-      if (mRenderMode == RM_Smooth && ! strips)
+      if ((mRenderMode == RM_Smooth && ! strips) || bBuffers)
       {
         mCounts.push_back(3*nt);
-        mOffsets.push_back(mTT.Trings() + 3*t0);
+        mOffsets.push_back(tring_ptr(t0));
       }
       else if (mRenderMode == RM_Smooth) render_smooth(t0, nt, s0, ns);
       else if (mRenderMode == RM_Flat)   render_flat  (t0, nt, s0, ns);

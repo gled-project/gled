@@ -137,6 +137,12 @@ void GLRnrDriver::EndRender()
 
   RnrDriver::EndRender();
 
+  if (bCheckPrograms)
+  {
+    for (GLenum e = glGetError(); e != GL_NO_ERROR; e = glGetError())
+      printf("GLRnrDriver::EndRender GL error 0x%x.\n", e);
+  }
+
   if (mStatsEvery > 0)
   {
     glFinish();

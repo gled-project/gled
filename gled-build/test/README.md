@@ -106,7 +106,10 @@ test, and a culled box whose corners are not all outside one clip plane.
 The terrain of `tringula.C(mode, faces_per_patch)` is split into patches of
 about that many triangles (default 1000, 0 for none). Patches are culled by
 their box and, while GL culls back faces, by their normal cone; check mode
-confirms each cone cull triangle by triangle. `GLED_RNR_STATS=<n>` prints the
+confirms each cone cull triangle by triangle. Smooth and flat shading draw from
+vertex buffers; `GLED_RNR_VBO=0` turns them off. Check mode confirms the flat
+buffers when they are built and reports GL errors after each render.
+`GLED_RNR_STATS=<n>` prints the
 mean and maximum render time and the culled lenses and parts every n renders.
 It calls `glFinish`, so measure with vsync off (`__GL_SYNC_TO_VBLANK=0` on
 NVIDIA). The terrain draws flat by default; `regress/tringula_shading.C`, run
