@@ -137,6 +137,17 @@ GLED_RNR_CHECK=1 timeout 22 gled --noprompt 'tringula.C(2,300)' \
 `GLED_RNR_CHECK=1 demos/run_demos.sh <outdir>` checks the render programs and
 culling of every demo it runs.
 
+**`xr_rig.C`** checks `XrRig`, the placement of a scene in a headset's space,
+without a headset: recentering puts the ridden frame under the head, facing
+the gaze; a turn in place keeps the head over the same world point; one hand
+carries the scene rigidly and keeps it level; two hands scale it by their
+distance. It must print `xr_rig: all passed`:
+
+```sh
+cd $GLEDSYS/demos/GledCore
+timeout 30 saturn --noprompt $GLEDSYS/test/regress/xr_rig.C < /dev/null
+```
+
 **`patches.C`** builds terrain patches on three GTS spheres with
 `TriMesh::BuildPatches()` and checks the patch table of `TringTvor`: the reorder
 keeps the triangles, the patches tile them, the boxes and normal cones hold

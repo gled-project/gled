@@ -5,8 +5,7 @@
 #include "PupilXr.h"
 #include "Pupil.h"
 #include <Glasses/PupilInfo.h>
-#include <Glasses/Camera.h>
-#include <Stones/ZTrans.h>
+#include <RnrBase/XrRig.h>
 #include <Rnr/GL/GLRnrDriver.h>
 #include <Gled/GTime.h>
 
@@ -29,7 +28,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <vector>
 #include <unistd.h>
 
@@ -37,6 +35,9 @@ using namespace gled;
 
 namespace
 {
+  const XrSpaceLocationFlags kPoseValid =
+    XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+
   ZTrans pose_to_trans(const XrPosef& pose)
   {
     const XrQuaternionf &q = pose.orientation;
@@ -54,25 +55,67 @@ namespace
     return t;
   }
 
-  // Translation, uniform scale, and a turn about the vertical (+y).
-  ZTrans translation(Double_t x, Double_t y, Double_t z)
-  { ZTrans t; t.CM(0, 3) = x; t.CM(1, 3) = y; t.CM(2, 3) = z; return t; }
+  ZPoint pos_of(const ZTrans& t) { return ZPoint(t.CM(0, 3), t.CM(1, 3), t.CM(2, 3)); }
+  ZPoint axis_of(const ZTrans& t, int i) { return ZPoint(t.CM(0, i), t.CM(1, i), t.CM(2, i)); }
 
-  ZTrans scaling(Double_t s)
-  { ZTrans t; for (int i = 0; i < 3; ++i) t.CM(i, i) = s; return t; }
-
-  // The turn of a rotation about the vertical, stable however the hand is held.
-  Double_t yaw_of(const ZTrans& t)
-  { return std::atan2(t.CM(0, 2) - t.CM(2, 0), t.CM(0, 0) + t.CM(2, 2)); }
-
-  ZTrans yaw(Double_t a)
+  // A texture to render into, with depth if asked for.
+  struct Target
   {
-    ZTrans t;
-    t.CM(0, 0) =  std::cos(a); t.CM(0, 2) = std::sin(a);
-    t.CM(2, 0) = -std::sin(a); t.CM(2, 2) = std::cos(a);
-    return t;
-  }
+    GLuint fFBO = 0, fTex = 0, fDepth = 0;
+    Int_t  fW = 0, fH = 0;
+
+    void ensure(Int_t w, Int_t h, bool depth)
+    {
+      if (fFBO && w == fW && h == fH) return;
+      destroy();
+      fW = w; fH = h;
+      glGenTextures(1, &fTex);
+      glBindTexture(GL_TEXTURE_2D, fTex);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glGenFramebuffers(1, &fFBO);
+      glBindFramebuffer(GL_FRAMEBUFFER, fFBO);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fTex, 0);
+      if (depth)
+      {
+        glGenRenderbuffers(1, &fDepth);
+        glBindRenderbuffer(GL_RENDERBUFFER, fDepth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fDepth);
+      }
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    void destroy()
+    {
+      if (fFBO)   glDeleteFramebuffers(1, &fFBO);
+      if (fTex)   glDeleteTextures(1, &fTex);
+      if (fDepth) glDeleteRenderbuffers(1, &fDepth);
+      fFBO = fTex = fDepth = 0;
+      fW = fH = 0;
+    }
+  };
 }
+
+// The controllers in one frame: poses in the reference space, buttons, sticks.
+struct PupilXr::Input
+{
+  bool    bFocused      = false;
+  ZTrans  fGrip[2];
+  bool    bGripValid[2] = { false, false };
+  bool    bGrab[2]      = { false, false };
+  Float_t fStick[4]     = { 0, 0, 0, 0 };    // left x, y, right x, y
+  ZTrans  fAim;
+  bool    bAimValid     = false;
+  bool    bTrigger      = false, bTriggerChanged = false;
+  bool    bShoot        = false, bShootChanged   = false;
+  bool    bExit         = false, bRecenter = false, bPanelToggle = false;
+};
 
 struct PupilXr::Impl
 {
@@ -85,6 +128,8 @@ struct PupilXr::Impl
   };
 
   Pupil          *fPupil;
+
+  // The session.
   XrInstance      fInstance = XR_NULL_HANDLE;
   XrSystemId      fSystem   = XR_NULL_SYSTEM_ID;
   XrSession       fSession  = XR_NULL_HANDLE;
@@ -94,49 +139,54 @@ struct PupilXr::Impl
   GLXDrawable     fDrawable = 0;
   Eye             fEyes[2];
   XrView          fViews[2];
-  Long64_t        fFrames   = 0;
-  GTime           fRateStart;
-  // Per frame: waiting in xrWaitFrame, rendering and submitting, and the time
+  bool            bViewsOk  = false;
+  XrTime          fLastTime = 0;
+
+  // Per frame, waiting in xrWaitFrame, rendering and submitting, and the time
   // between frames, when FLTK runs the desktop pupil and the Eye.
-  GTime           fFrameEnd;
+  Long64_t        fFrames   = 0;
+  GTime           fRateStart, fFrameEnd;
   Double_t        fWaitSum = 0, fWorkSum = 0, fGapSum = 0;
   XrDuration      fPeriod = 0;
 
-  // Controllers, left and right.
+  // The controllers: left and right subactions.
   XrActionSet     fActionSet = XR_NULL_HANDLE;
-  XrAction        fPose = XR_NULL_HANDLE, fGrab = XR_NULL_HANDLE,
-                  fMenu = XR_NULL_HANDLE, fBuzz = XR_NULL_HANDLE,
-                  fReset = XR_NULL_HANDLE, fStick = XR_NULL_HANDLE,
-                  fAimPose = XR_NULL_HANDLE, fSelect = XR_NULL_HANDLE, fShoot = XR_NULL_HANDLE;
+  XrAction        fGripPose = XR_NULL_HANDLE, fGrab = XR_NULL_HANDLE, fStick = XR_NULL_HANDLE,
+                  fAimPose = XR_NULL_HANDLE, fTrigger = XR_NULL_HANDLE, fShoot = XR_NULL_HANDLE,
+                  fRecenter = XR_NULL_HANDLE, fExitAct = XR_NULL_HANDLE, fPanelAct = XR_NULL_HANDLE,
+                  fBuzz = XR_NULL_HANDLE;
   XrPath          fHand[2]      = { XR_NULL_PATH, XR_NULL_PATH };
   XrSpace         fHandSpace[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
-  bool            bHeld[2]      = { false, false };
+  XrSpace         fAimSpace     = XR_NULL_HANDLE;
+  bool            bGrabPrev[2]  = { false, false };
+  bool            bTriggerPrev  = false;
 
-  // The camera's view frame, in gled units, to the reference space, in metres.
-  ZTrans          fW, fWStart;
-  // Grab anchors: the hands that hold, and fW and where the hands were when they took hold.
-  int             fGrabMask = 0;
-  ZTrans          fW0;
-  ZPoint          fMid0;
-  Double_t        fDist0 = 1, fYaw0 = 0;
-  // Flying along the gaze: speed in metres per second, acceleration of the stick.
-  Double_t        fSpeed = 0, fFlyAccel = 3;
-  XrTime          fLastTime = 0;
-  // The right hand's laser, in the reference space, and its trigger and B.
-  XrSpace         fAimSpace = XR_NULL_HANDLE;
+  // The placement, the ridden frame's view and the camera base, the head.
+  XrRig           fRig;
+  ZTrans          fLook, fBase, fHead;
+
+  // The laser of this frame, and its press on the panel or in the scene.
   ZTrans          fAim;
-  bool            bAimValid = false, bSelectDown = false;
-  // The camera's view and the camera base of the last frame, for the laser's ray.
-  ZTrans          fLook, fBase, fLookPrev;
-  bool            bLookPrev = false;
-  // Recenter at the next frame: the camera under the head, facing the gaze.
-  bool            bAlign = true;
+  bool            bAimValid = false;
+  Double_t        fLaserLen = 30;
+  bool            bPanelPress = false, bScenePress = false;
 
-  ZPoint head_pos() const
-  {
-    const XrVector3f &a = fViews[0].pose.position, &b = fViews[1].pose.position;
-    return ZPoint((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-  }
+  // The overlay panel above the left hand: the box of window pixels the
+  // overlay draws in (GL's y up), found from the texture's alpha every few
+  // frames; its frame (z toward the head) and half sizes in metres; and where
+  // the laser is on it, in window pixels (FLTK's y down).
+  Target          fPanel;
+  bool            bPanelOn = true, bPanelShown = false;
+  Int_t           fBox[4] = { 0, 0, 0, 0 };   // x0, y0, x1, y1
+  Long64_t        fBoxFrame = -1000;
+  ZTrans          fPanelFrame;
+  Double_t        fPanelHW = 0, fPanelHH = 0;
+  bool            bPanelHit = false;
+  Int_t           fPanelX = 0, fPanelY = 0;
+
+  // The pupil's window mirrors the left eye.
+  bool            bMirror = true;
+  Target          fMirror;
 
   bool ok(XrResult r, const char* what)
   {
@@ -174,7 +224,51 @@ struct PupilXr::Impl
     return ok(xrSuggestInteractionProfileBindings(fInstance, &ipsb), profile);
   }
 
-  void buzz(int h)
+  bool make_space(XrAction pose, int hand, XrSpace* s)
+  {
+    XrActionSpaceCreateInfo ascr { XR_TYPE_ACTION_SPACE_CREATE_INFO };
+    ascr.action        = pose;
+    ascr.subactionPath = fHand[hand];
+    ascr.poseInActionSpace.orientation.w = 1;
+    return ok(xrCreateActionSpace(fSession, &ascr, s), "xrCreateActionSpace");
+  }
+
+  XrActionStateGetInfo get_info(XrAction a, int hand)
+  {
+    XrActionStateGetInfo gi { XR_TYPE_ACTION_STATE_GET_INFO };
+    gi.action        = a;
+    gi.subactionPath = fHand[hand];
+    return gi;
+  }
+
+  // A button that went down since the last sync.
+  bool pressed(XrAction a, int hand)
+  {
+    XrActionStateGetInfo gi = get_info(a, hand);
+    XrActionStateBoolean s { XR_TYPE_ACTION_STATE_BOOLEAN };
+    xrGetActionStateBoolean(fSession, &gi, &s);
+    return s.isActive && s.changedSinceLastSync && s.currentState;
+  }
+
+  // A squeeze or trigger past 0.6, held until it drops below 0.4.
+  bool held(XrAction a, int hand, bool was)
+  {
+    XrActionStateGetInfo gi = get_info(a, hand);
+    XrActionStateFloat s { XR_TYPE_ACTION_STATE_FLOAT };
+    xrGetActionStateFloat(fSession, &gi, &s);
+    return s.isActive && s.currentState > (was ? 0.4f : 0.6f);
+  }
+
+  bool locate(XrSpace space, XrTime t, ZTrans& pose)
+  {
+    XrSpaceLocation loc { XR_TYPE_SPACE_LOCATION };
+    xrLocateSpace(space, fSpace, t, &loc);
+    if ((loc.locationFlags & kPoseValid) != kPoseValid) return false;
+    pose = pose_to_trans(loc.pose);
+    return true;
+  }
+
+  void buzz(int hand)
   {
     XrHapticVibration v { XR_TYPE_HAPTIC_VIBRATION };
     v.amplitude = 0.4f;
@@ -182,7 +276,7 @@ struct PupilXr::Impl
     v.frequency = XR_FREQUENCY_UNSPECIFIED;
     XrHapticActionInfo hi { XR_TYPE_HAPTIC_ACTION_INFO };
     hi.action        = fBuzz;
-    hi.subactionPath = fHand[h];
+    hi.subactionPath = fHand[hand];
     xrApplyHapticFeedback(fSession, &hi, (XrHapticBaseHeader*) &v);
   }
 };
@@ -193,12 +287,9 @@ PupilXr::PupilXr(Pupil* pupil) : m(new Impl)
 {
   m->fPupil = pupil;
   for (auto &v : m->fViews) v = { XR_TYPE_VIEW };
-  Double_t scale = 0.2;  // Metres per gled unit.
-  if (const char* s = getenv("GLED_XR_SCALE"))
-    scale = atof(s);
-  m->fW = m->fWStart = scaling(scale);
-  if (const char* s = getenv("GLED_XR_FLY"))
-    m->fFlyAccel = atof(s);
+  if (const char* s = getenv("GLED_XR_SCALE")) m->fRig = XrRig(atof(s));
+  if (const char* s = getenv("GLED_XR_FLY"))   m->fRig.fFlyAccel = atof(s);
+  m->bMirror = getenv("GLED_XR_DESKTOP") == 0;
 }
 
 PupilXr::~PupilXr()
@@ -206,6 +297,8 @@ PupilXr::~PupilXr()
   Fl::remove_idle(IdleCallback, this);
   m->fPupil->make_current();
   if (m->fDrawable) glXSwapIntervalEXT(fl_display, m->fDrawable, 1);
+  m->fPanel.destroy();
+  m->fMirror.destroy();
   for (auto &e : m->fEyes)
   {
     if (e.fFBO)   glDeleteFramebuffers(1, &e.fFBO);
@@ -213,7 +306,7 @@ PupilXr::~PupilXr()
     if (e.fSwapchain) xrDestroySwapchain(e.fSwapchain);
   }
   for (auto s : m->fHandSpace) if (s) xrDestroySpace(s);
-  if (m->fAimSpace) xrDestroySpace(m->fAimSpace);
+  if (m->fAimSpace)  xrDestroySpace(m->fAimSpace);
   if (m->fActionSet) xrDestroyActionSet(m->fActionSet);
   if (m->fSpace)     xrDestroySpace(m->fSpace);
   if (m->fSession)   xrDestroySession(m->fSession);
@@ -281,52 +374,42 @@ bool PupilXr::Init()
   rsci.poseInReferenceSpace.orientation.w = 1;
   if ( ! M.ok(xrCreateReferenceSpace(M.fSession, &rsci, &M.fSpace), "xrCreateReferenceSpace")) return false;
 
-  // Controllers: grip, squeeze and stick on both hands; menu on the left;
-  // aim, trigger, A and B on the right.
+  // Controllers: grip, squeeze and stick on both hands; menu and X on the
+  // left; aim, trigger, A and B on the right.
   xrStringToPath(M.fInstance, "/user/hand/left",  &M.fHand[0]);
   xrStringToPath(M.fInstance, "/user/hand/right", &M.fHand[1]);
   XrActionSetCreateInfo asci { XR_TYPE_ACTION_SET_CREATE_INFO };
   strcpy(asci.actionSetName, "gled");
   strcpy(asci.localizedActionSetName, "Gled");
   if ( ! M.ok(xrCreateActionSet(M.fInstance, &asci, &M.fActionSet), "xrCreateActionSet")) return false;
-  if ( ! M.make_action(XR_ACTION_TYPE_POSE_INPUT,       "grip",  "Grip pose", &M.fPose) ||
-       ! M.make_action(XR_ACTION_TYPE_FLOAT_INPUT,      "grab",  "Grab",      &M.fGrab) ||
-       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "exit",  "Exit",      &M.fMenu) ||
-       ! M.make_action(XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz",  "Buzz",      &M.fBuzz) ||
-       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "reset", "Reset",     &M.fReset) ||
-       ! M.make_action(XR_ACTION_TYPE_VECTOR2F_INPUT,   "stick", "Stick",     &M.fStick) ||
-       ! M.make_action(XR_ACTION_TYPE_POSE_INPUT,       "aim",   "Aim pose",  &M.fAimPose) ||
-       ! M.make_action(XR_ACTION_TYPE_FLOAT_INPUT,      "select", "Select",   &M.fSelect) ||
-       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "shoot", "Shoot",     &M.fShoot))
+  if ( ! M.make_action(XR_ACTION_TYPE_POSE_INPUT,       "grip",     "Grip pose", &M.fGripPose) ||
+       ! M.make_action(XR_ACTION_TYPE_FLOAT_INPUT,      "grab",     "Grab",      &M.fGrab)     ||
+       ! M.make_action(XR_ACTION_TYPE_VECTOR2F_INPUT,   "stick",    "Stick",     &M.fStick)    ||
+       ! M.make_action(XR_ACTION_TYPE_POSE_INPUT,       "aim",      "Aim pose",  &M.fAimPose)  ||
+       ! M.make_action(XR_ACTION_TYPE_FLOAT_INPUT,      "trigger",  "Pick",      &M.fTrigger)  ||
+       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "shoot",    "Shoot",     &M.fShoot)    ||
+       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "recenter", "Recenter",  &M.fRecenter) ||
+       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "exit",     "Exit",      &M.fExitAct)  ||
+       ! M.make_action(XR_ACTION_TYPE_BOOLEAN_INPUT,    "panel",    "Panel",     &M.fPanelAct) ||
+       ! M.make_action(XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz",     "Buzz",      &M.fBuzz))
     return false;
   M.suggest("/interaction_profiles/oculus/touch_controller",
-            { { M.fPose, "/user/hand/left/input/grip/pose"     }, { M.fPose, "/user/hand/right/input/grip/pose"     },
-              { M.fGrab, "/user/hand/left/input/squeeze/value" }, { M.fGrab, "/user/hand/right/input/squeeze/value" },
-              { M.fMenu, "/user/hand/left/input/menu/click"    }, { M.fReset, "/user/hand/right/input/a/click"      },
-              { M.fStick, "/user/hand/left/input/thumbstick"   }, { M.fStick, "/user/hand/right/input/thumbstick"   },
-              { M.fAimPose, "/user/hand/right/input/aim/pose"  }, { M.fSelect, "/user/hand/right/input/trigger/value" },
-              { M.fShoot, "/user/hand/right/input/b/click"     },
-              { M.fBuzz, "/user/hand/left/output/haptic"       }, { M.fBuzz, "/user/hand/right/output/haptic"       } });
+            { { M.fGripPose, "/user/hand/left/input/grip/pose"      }, { M.fGripPose, "/user/hand/right/input/grip/pose"      },
+              { M.fGrab,     "/user/hand/left/input/squeeze/value"  }, { M.fGrab,     "/user/hand/right/input/squeeze/value"  },
+              { M.fStick,    "/user/hand/left/input/thumbstick"     }, { M.fStick,    "/user/hand/right/input/thumbstick"     },
+              { M.fAimPose,  "/user/hand/right/input/aim/pose"      }, { M.fTrigger,  "/user/hand/right/input/trigger/value"  },
+              { M.fShoot,    "/user/hand/right/input/b/click"       }, { M.fRecenter, "/user/hand/right/input/a/click"        },
+              { M.fExitAct,  "/user/hand/left/input/menu/click"     }, { M.fPanelAct, "/user/hand/left/input/x/click"         },
+              { M.fBuzz,     "/user/hand/left/output/haptic"        }, { M.fBuzz,     "/user/hand/right/output/haptic"        } });
   M.suggest("/interaction_profiles/khr/simple_controller",
-            { { M.fPose, "/user/hand/left/input/grip/pose"     }, { M.fPose, "/user/hand/right/input/grip/pose"     },
-              { M.fGrab, "/user/hand/left/input/select/click"  }, { M.fGrab, "/user/hand/right/input/select/click"  },
-              { M.fMenu, "/user/hand/left/input/menu/click"    },
-              { M.fBuzz, "/user/hand/left/output/haptic"       }, { M.fBuzz, "/user/hand/right/output/haptic"       } });
-  for (int h = 0; h < 2; ++h)
-  {
-    XrActionSpaceCreateInfo ascr { XR_TYPE_ACTION_SPACE_CREATE_INFO };
-    ascr.action        = M.fPose;
-    ascr.subactionPath = M.fHand[h];
-    ascr.poseInActionSpace.orientation.w = 1;
-    if ( ! M.ok(xrCreateActionSpace(M.fSession, &ascr, &M.fHandSpace[h]), "xrCreateActionSpace")) return false;
-  }
-  {
-    XrActionSpaceCreateInfo ascr { XR_TYPE_ACTION_SPACE_CREATE_INFO };
-    ascr.action        = M.fAimPose;
-    ascr.subactionPath = M.fHand[1];
-    ascr.poseInActionSpace.orientation.w = 1;
-    if ( ! M.ok(xrCreateActionSpace(M.fSession, &ascr, &M.fAimSpace), "xrCreateActionSpace")) return false;
-  }
+            { { M.fGripPose, "/user/hand/left/input/grip/pose"      }, { M.fGripPose, "/user/hand/right/input/grip/pose"      },
+              { M.fGrab,     "/user/hand/left/input/select/click"   }, { M.fGrab,     "/user/hand/right/input/select/click"   },
+              { M.fExitAct,  "/user/hand/left/input/menu/click"     },
+              { M.fBuzz,     "/user/hand/left/output/haptic"        }, { M.fBuzz,     "/user/hand/right/output/haptic"        } });
+  if ( ! M.make_space(M.fGripPose, 0, &M.fHandSpace[0]) ||
+       ! M.make_space(M.fGripPose, 1, &M.fHandSpace[1]) ||
+       ! M.make_space(M.fAimPose,  1, &M.fAimSpace))
+    return false;
   XrSessionActionSetsAttachInfo sasai { XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO };
   sasai.countActionSets = 1;
   sasai.actionSets      = &M.fActionSet;
@@ -383,7 +466,7 @@ bool PupilXr::Init()
   XrInstanceProperties ip { XR_TYPE_INSTANCE_PROPERTIES };
   xrGetInstanceProperties(M.fInstance, &ip);
   printf("PupilXr: %s, %dx%d per eye, format 0x%llx, %.3g m per unit.\n", ip.runtimeName,
-         M.fEyes[0].fW, M.fEyes[0].fH, (unsigned long long) fmt, M.fW.CM(0, 0));
+         M.fEyes[0].fW, M.fEyes[0].fH, (unsigned long long) fmt, M.fRig.Scale());
   fflush(stdout);
   return true;
 }
@@ -392,6 +475,25 @@ bool PupilXr::RequestExit()
 {
   if ( ! m->bRunning) return false;
   return XR_SUCCEEDED(xrRequestExitSession(m->fSession));
+}
+
+bool PupilXr::Mirroring() const
+{
+  return m->bMirror;
+}
+
+void PupilXr::DrawMirror(int w, int h)
+{
+  if (m->fMirror.fFBO == 0)
+  {
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    return;
+  }
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, m->fMirror.fFBO);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glBlitFramebuffer(0, 0, m->fMirror.fW, m->fMirror.fH, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 //==============================================================================
@@ -430,6 +532,186 @@ bool PupilXr::poll_events()
   return ! M.bExit;
 }
 
+void PupilXr::read_input(Input& in, long long t)
+{
+  Impl &M = *m;
+
+  XrActiveActionSet aas { M.fActionSet, XR_NULL_PATH };
+  XrActionsSyncInfo si { XR_TYPE_ACTIONS_SYNC_INFO };
+  si.countActiveActionSets = 1;
+  si.activeActionSets      = &aas;
+  if (xrSyncActions(M.fSession, &si) != XR_SUCCESS)
+  {
+    M.bGrabPrev[0] = M.bGrabPrev[1] = M.bTriggerPrev = false;
+    return;
+  }
+  in.bFocused = true;
+
+  in.bExit        = M.pressed(M.fExitAct,  0);
+  in.bPanelToggle = M.pressed(M.fPanelAct, 0);
+  in.bRecenter    = M.pressed(M.fRecenter, 1);
+
+  for (int h = 0; h < 2; ++h)
+  {
+    in.bGripValid[h] = M.locate(M.fHandSpace[h], t, in.fGrip[h]);
+    const bool grab = M.held(M.fGrab, h, M.bGrabPrev[h]);
+    if (grab && ! M.bGrabPrev[h]) M.buzz(h);
+    M.bGrabPrev[h] = grab;
+    in.bGrab[h]    = grab && in.bGripValid[h];
+
+    XrActionStateGetInfo gi = M.get_info(M.fStick, h);
+    XrActionStateVector2f st { XR_TYPE_ACTION_STATE_VECTOR2F };
+    xrGetActionStateVector2f(M.fSession, &gi, &st);
+    if (st.isActive)
+    {
+      in.fStick[2*h]     = st.currentState.x;
+      in.fStick[2*h + 1] = st.currentState.y;
+    }
+  }
+
+  in.bAimValid       = M.locate(M.fAimSpace, t, in.fAim);
+  in.bTrigger        = M.held(M.fTrigger, 1, M.bTriggerPrev);
+  in.bTriggerChanged = in.bTrigger != M.bTriggerPrev;
+  M.bTriggerPrev     = in.bTrigger;
+
+  XrActionStateGetInfo gi = M.get_info(M.fShoot, 1);
+  XrActionStateBoolean shoot { XR_TYPE_ACTION_STATE_BOOLEAN };
+  xrGetActionStateBoolean(M.fSession, &gi, &shoot);
+  in.bShoot        = shoot.isActive && shoot.currentState;
+  in.bShootChanged = shoot.isActive && shoot.changedSinceLastSync;
+}
+
+void PupilXr::act(const Input& in, double dt)
+{
+  Impl  &M = *m;
+  Pupil &P = *M.fPupil;
+
+  if ( ! in.bFocused)
+  {
+    // Let go of everything.
+    const ZTrans* none[2] = { 0, 0 };
+    M.fRig.Grab(none);
+    sticks_off();
+    M.bAimValid = M.bPanelShown = false;
+    return;
+  }
+
+  if (in.bExit)        xrRequestExitSession(M.fSession);
+  if (in.bRecenter)    M.fRig.Recenter();
+  if (in.bPanelToggle) M.bPanelOn = ! M.bPanelOn;
+
+  const ZTrans* hands[2] = { in.bGrab[0] ? &in.fGrip[0] : 0, in.bGrab[1] ? &in.fGrip[1] : 0 };
+  const bool holding = M.fRig.Grab(hands);
+
+  if (P.mEventHandlerImg && P.bUseEventHandler)
+  {
+    // The pupil's spirit reads the sticks and moves the camera, which the headset rides.
+    PupilInfo &PI = *P.mInfo;
+    for (int i = 0; i < 4; ++i) PI.fXrSticks[i] = in.fStick[i];
+    PI.fXrSticksOn = true;
+  }
+  else if ( ! holding)
+  {
+    M.fRig.Fly(M.fHead, in.fStick, dt);
+  }
+
+  if ( ! M.bViewsOk) return;
+  M.fRig.Follow(M.fLook, M.fHead);
+
+  // The overlay panel, its lower edge 8 cm above the left hand, facing the
+  // head, at 0.5 mm per window pixel and at most 40 cm wide.
+  M.bPanelShown = M.bPanelOn && P.mOverlayImg && P.bShowOverlay && in.bGripValid[0];
+  if (M.bPanelShown)
+  {
+    const Int_t bw = M.fBox[2] - M.fBox[0], bh = M.fBox[3] - M.fBox[1];
+    const Double_t mpp = TMath::Min(0.0005, 0.4 / TMath::Max(bw, 1));
+    M.fPanelHW = 0.5 * mpp * bw;
+    M.fPanelHH = 0.5 * mpp * bh;
+    ZPoint c = pos_of(in.fGrip[0]);
+    c.y += 0.08 + M.fPanelHH;
+    ZPoint z = pos_of(M.fHead);
+    z -= c;
+    if (z.Mag2() < 1e-6) z.Set(0, 0, 1);
+    z.Normalize();
+    ZPoint x = ZPoint(0, 1, 0).Cross(z);
+    if (x.Mag2() < 1e-6) x.Set(1, 0, 0);
+    x.Normalize();
+    ZPoint y = z.Cross(x);
+    M.fPanelFrame.SetBaseVec(1, x);
+    M.fPanelFrame.SetBaseVec(2, y);
+    M.fPanelFrame.SetBaseVec(3, z);
+    M.fPanelFrame.SetBaseVec(4, c);
+  }
+
+  // The laser: on the panel it works the overlay; elsewhere it picks and shoots.
+  M.bAimValid = in.bAimValid;
+  M.fAim      = in.fAim;
+  M.fLaserLen = 30;
+  bool  hit = false;
+  Int_t px = 0, py = 0;
+  if (M.bPanelShown && M.fPanelHW > 0 && M.bAimValid)
+  {
+    const ZPoint o = pos_of(M.fAim), d = axis_of(M.fAim, 2) * -1.0;
+    const ZPoint n = axis_of(M.fPanelFrame, 2), c = pos_of(M.fPanelFrame);
+    const Double_t dn = d.Dot(n);
+    if (dn < -1e-6)
+    {
+      ZPoint oc(c);
+      oc -= o;
+      const Double_t t = oc.Dot(n) / dn;
+      ZPoint q = d * t;
+      q += o;
+      q -= c;
+      const Double_t lx = q.Dot(axis_of(M.fPanelFrame, 0)), ly = q.Dot(axis_of(M.fPanelFrame, 1));
+      if (t > 0 && std::abs(lx) <= M.fPanelHW && std::abs(ly) <= M.fPanelHH)
+      {
+        hit         = true;
+        M.fLaserLen = t;
+        px = M.fBox[0] + (Int_t) ((lx + M.fPanelHW) / (2 * M.fPanelHW) * (M.fBox[2] - M.fBox[0]));
+        py = P.h() - (M.fBox[1] + (Int_t) ((ly + M.fPanelHH) / (2 * M.fPanelHH) * (M.fBox[3] - M.fBox[1])));
+      }
+    }
+  }
+
+  const bool moved = hit && (! M.bPanelHit || px != M.fPanelX || py != M.fPanelY);
+  if (M.bPanelPress)
+  {
+    if (moved) overlay_event(FL_DRAG, px, py);
+  }
+  else if (moved)
+  {
+    overlay_event(FL_MOVE, px, py);
+  }
+  else if ( ! hit && M.bPanelHit)
+  {
+    overlay_event(FL_LEAVE, M.fPanelX, M.fPanelY);
+  }
+  if (hit) { M.fPanelX = px; M.fPanelY = py; }
+  M.bPanelHit = hit;
+
+  if (in.bTriggerChanged)
+  {
+    if ( ! in.bTrigger)
+    {
+      if (M.bPanelPress) overlay_event(FL_RELEASE, M.fPanelX, M.fPanelY);
+      if (M.bScenePress) laser_event(FL_RELEASE, 1);
+      M.bPanelPress = M.bScenePress = false;
+    }
+    else if (hit)
+    {
+      overlay_event(FL_PUSH, px, py);
+      M.bPanelPress = true;
+    }
+    else
+    {
+      laser_event(FL_PUSH, 1);
+      M.bScenePress = true;
+    }
+  }
+  if (in.bShootChanged && ! hit)
+    laser_event(in.bShoot ? FL_PUSH : FL_RELEASE, 3);
+}
+
 void PupilXr::sticks_off()
 {
   PupilInfo &PI = *m->fPupil->mInfo;
@@ -439,15 +721,15 @@ void PupilXr::sticks_off()
 
 void PupilXr::laser_event(int ev, int button)
 {
-  // A mouse event along the laser, with the ray in the camera-base frame.
+  // A mouse event along the laser, with the ray in the camera-base frame,
+  // through the pupil's normal event delivery.
   Impl  &M = *m;
   Pupil &P = *M.fPupil;
   if ( ! M.bAimValid) return;
 
-  ZTrans inv = M.fW * M.fLook * M.fBase;
+  ZTrans inv = M.fRig.RefFromWorld() * M.fBase;
   inv.Invert();
-  ZPoint pos(M.fAim.CM(0, 3), M.fAim.CM(1, 3), M.fAim.CM(2, 3));
-  ZPoint dir(-M.fAim.CM(0, 2), -M.fAim.CM(1, 2), -M.fAim.CM(2, 2));
+  ZPoint pos = pos_of(M.fAim), dir = axis_of(M.fAim, 2) * -1.0;
   inv.MultiplyIP(pos);
   inv.RotateIP(dir);
   dir.Normalize();
@@ -462,179 +744,79 @@ void PupilXr::laser_event(int ev, int button)
   P.mDriver->ReleaseFixedMouseRay();
 }
 
-void PupilXr::update_input(long long display_time)
+void PupilXr::overlay_event(int ev, int x, int y)
 {
-  Impl &M = *m;
+  // A mouse event at window pixels of the panel, to the overlay only. Overlay
+  // picking uses the window's viewport.
+  Pupil &P = *m->fPupil;
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(0, 0, P.w(), P.h());
 
-  XrActiveActionSet aas { M.fActionSet, XR_NULL_PATH };
-  XrActionsSyncInfo si { XR_TYPE_ACTIONS_SYNC_INFO };
-  si.countActiveActionSets = 1;
-  si.activeActionSets      = &aas;
-  if (xrSyncActions(M.fSession, &si) != XR_SUCCESS)
-  {
-    // Not focused: let go.
-    M.fGrabMask = 0;
-    M.bHeld[0]  = M.bHeld[1] = false;
-    sticks_off();
-    return;
-  }
+  A_Rnr::Fl_Event e;
+  P.setup_rnr_event(ev, e);
+  e.fX         = x;
+  e.fY         = y;
+  e.fButton    = 1;
+  e.fButtons   = (ev == FL_PUSH || ev == FL_DRAG) ? FL_BUTTON1 : 0;
+  e.fState     = e.fButtons;
+  e.fText      = "";
+  e.fIsOverlay = true;
+  P.mDriver->PreEventHandling(e);
+  P.handle_overlay(e);
+}
 
-  XrActionStateGetInfo gi { XR_TYPE_ACTION_STATE_GET_INFO };
-  gi.action        = M.fMenu;
-  gi.subactionPath = M.fHand[0];
-  XrActionStateBoolean menu { XR_TYPE_ACTION_STATE_BOOLEAN };
-  xrGetActionStateBoolean(M.fSession, &gi, &menu);
-  if (menu.isActive && menu.changedSinceLastSync && menu.currentState)
-    xrRequestExitSession(M.fSession);
+//==============================================================================
 
-  gi.action        = M.fReset;
-  gi.subactionPath = M.fHand[1];
-  XrActionStateBoolean reset { XR_TYPE_ACTION_STATE_BOOLEAN };
-  xrGetActionStateBoolean(M.fSession, &gi, &reset);
-  if (reset.isActive && reset.changedSinceLastSync && reset.currentState)
-  {
-    M.bAlign    = true;
-    M.fSpeed    = 0;
-    M.fGrabMask = -1; // Re-anchor any hand still holding.
-  }
-
-  const Double_t dt = M.fLastTime ? TMath::Min(1e-9 * (display_time - M.fLastTime), 0.1) : 0;
-  M.fLastTime = display_time;
-
-  ZTrans H[2];
-  int    mask = 0;
-  for (int h = 0; h < 2; ++h)
-  {
-    gi.action        = M.fGrab;
-    gi.subactionPath = M.fHand[h];
-    XrActionStateFloat grab { XR_TYPE_ACTION_STATE_FLOAT };
-    xrGetActionStateFloat(M.fSession, &gi, &grab);
-    // Hysteresis, so a half-pressed grip does not flicker.
-    bool held = grab.isActive && grab.currentState > (M.bHeld[h] ? 0.4f : 0.6f);
-    if (held && ! M.bHeld[h]) M.buzz(h);
-    M.bHeld[h] = held;
-
-    XrSpaceLocation loc { XR_TYPE_SPACE_LOCATION };
-    xrLocateSpace(M.fHandSpace[h], M.fSpace, display_time, &loc);
-    const XrSpaceLocationFlags valid = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-    if (held && (loc.locationFlags & valid) == valid)
-    {
-      H[h]  = pose_to_trans(loc.pose);
-      mask |= 1 << h;
-    }
-  }
-
-  ZPoint   pl(H[0].CM(0, 3), H[0].CM(1, 3), H[0].CM(2, 3));
-  ZPoint   pr(H[1].CM(0, 3), H[1].CM(1, 3), H[1].CM(2, 3));
-  ZPoint   mid((pl.x + pr.x) / 2, (pl.y + pr.y) / 2, (pl.z + pr.z) / 2);
-  Double_t dist = pl.Distance(pr);
-  Double_t ang  = std::atan2(pl.x - pr.x, pl.z - pr.z);
-
-  XrVector2f stick[2] = { { 0, 0 }, { 0, 0 } };
-  for (int h = 0; h < 2; ++h)
-  {
-    gi.action        = M.fStick;
-    gi.subactionPath = M.fHand[h];
-    XrActionStateVector2f st { XR_TYPE_ACTION_STATE_VECTOR2F };
-    xrGetActionStateVector2f(M.fSession, &gi, &st);
-    if (st.isActive) stick[h] = st.currentState;
-  }
-
-  // The laser: aim pose, trigger to pick, B to shoot, as mouse buttons 1 and 3.
-  {
-    XrSpaceLocation loc { XR_TYPE_SPACE_LOCATION };
-    xrLocateSpace(M.fAimSpace, M.fSpace, display_time, &loc);
-    const XrSpaceLocationFlags valid = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-    M.bAimValid = (loc.locationFlags & valid) == valid;
-    if (M.bAimValid) M.fAim = pose_to_trans(loc.pose);
-
-    gi.action        = M.fSelect;
-    gi.subactionPath = M.fHand[1];
-    XrActionStateFloat sel { XR_TYPE_ACTION_STATE_FLOAT };
-    xrGetActionStateFloat(M.fSession, &gi, &sel);
-    const bool sel_down = sel.isActive && sel.currentState > (M.bSelectDown ? 0.4f : 0.6f);
-    if (sel_down != M.bSelectDown)
-    {
-      M.bSelectDown = sel_down;
-      laser_event(sel_down ? FL_PUSH : FL_RELEASE, 1);
-    }
-
-    gi.action        = M.fShoot;
-    XrActionStateBoolean shoot { XR_TYPE_ACTION_STATE_BOOLEAN };
-    xrGetActionStateBoolean(M.fSession, &gi, &shoot);
-    if (shoot.isActive && shoot.changedSinceLastSync)
-      laser_event(shoot.currentState ? FL_PUSH : FL_RELEASE, 3);
-  }
-
+void PupilXr::render_panel()
+{
+  // The overlay alone, as the pupil's window draws it, on a clear background.
+  Impl  &M = *m;
   Pupil &P = *M.fPupil;
-  if (P.mEventHandlerImg && P.bUseEventHandler)
+  if ( ! M.bPanelShown) return;
+
+  M.fPanel.ensure(P.w(), P.h(), true);
+  glBindFramebuffer(GL_FRAMEBUFFER, M.fPanel.fFBO);
+  glViewport(0, 0, P.w(), P.h());
+  // The overlay's projection starts from the pupil's base projection, which an
+  // overlay pick leaves as its pick matrix; SetProjection resets it.
+  glMatrixMode(GL_PROJECTION); glLoadIdentity();
+  P.SetProjection();
+  glMatrixMode(GL_MODELVIEW);  glLoadIdentity();
+  P.rnr_default_init();
+  glClearColor(0, 0, 0, 0);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  P.Render(false, true);
+
+  // The box of drawn pixels, with a margin; re-found every 15 frames.
+  if (M.fFrames - M.fBoxFrame >= 15)
   {
-    // The pupil's spirit reads the sticks and moves the camera, which the headset rides.
-    PupilInfo &PI = *P.mInfo;
-    PI.fXrSticks[0] = stick[0].x; PI.fXrSticks[1] = stick[0].y;
-    PI.fXrSticks[2] = stick[1].x; PI.fXrSticks[3] = stick[1].y;
-    PI.fXrSticksOn  = true;
-  }
-  else if (mask == 0)
-  {
-    // Left stick: speed up along the gaze, brake and reverse, coast to a stop
-    // when let go; and strafe. Right stick: turn, and like a plane, push to go down.
-    if (std::abs(stick[0].y) > 0.15)
-      M.fSpeed = TMath::Range(-50.0, 50.0, M.fSpeed + stick[0].y * M.fFlyAccel * dt);
+    const Int_t w = P.w(), h = P.h();
+    std::vector<unsigned char> a(w * h);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_ALPHA, GL_UNSIGNED_BYTE, a.data());
+    Int_t x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (Int_t y = 0; y < h; ++y)
+      for (Int_t x = 0; x < w; ++x)
+        if (a[y * w + x])
+        {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+    const Int_t mg = 8;
+    if (x1 < 0)
+    {
+      M.fBox[0] = M.fBox[1] = M.fBox[2] = M.fBox[3] = 0;
+    }
     else
-      M.fSpeed *= std::exp(-dt / 0.4);
-
-    ZTrans head = pose_to_trans(M.fViews[0].pose);
-    const Double_t f = M.fSpeed * dt, s = 2 * stick[0].x * dt, u = 2 * stick[1].y * dt;
-    ZTrans move = translation(f * head.CM(0, 2) - s * head.CM(0, 0),
-                              f * head.CM(1, 2) - s * head.CM(1, 0) + u,
-                              f * head.CM(2, 2) - s * head.CM(2, 0));
-    if (std::abs(stick[1].x) > 0.15)
     {
-      const Double_t hx = head.CM(0, 3), hy = head.CM(1, 3), hz = head.CM(2, 3);
-      move = translation(hx, hy, hz) * yaw(-stick[1].x * dt) * translation(-hx, -hy, -hz) * move;
+      M.fBox[0] = TMath::Max(x0 - mg, 0); M.fBox[1] = TMath::Max(y0 - mg, 0);
+      M.fBox[2] = TMath::Min(x1 + 1 + mg, w); M.fBox[3] = TMath::Min(y1 + 1 + mg, h);
     }
-    M.fW = move * M.fW;
+    M.fBoxFrame = M.fFrames;
   }
-  if (mask != 0)
-  {
-    M.fSpeed = 0;
-  }
-
-  if (mask != M.fGrabMask)
-  {
-    // A hand took hold or let go: anchor at the current placement.
-    M.fW0       = M.fW;
-    M.fGrabMask = mask;
-    if (mask == 1 || mask == 2)
-    {
-      const ZTrans &h = H[mask - 1];
-      M.fMid0 = ZPoint(h.CM(0, 3), h.CM(1, 3), h.CM(2, 3));
-      M.fYaw0 = yaw_of(h);
-    }
-    else if (mask == 3)
-    {
-      M.fMid0  = mid;
-      M.fDist0 = TMath::Max(dist, 1e-3);
-      M.fYaw0  = ang;
-    }
-    return;
-  }
-
-  if (mask == 1 || mask == 2)
-  {
-    // The scene follows the hand's position and heading, and stays level.
-    const ZTrans &h = H[mask - 1];
-    M.fW = translation(h.CM(0, 3), h.CM(1, 3), h.CM(2, 3)) *
-           yaw(yaw_of(h) - M.fYaw0) *
-           translation(-M.fMid0.x, -M.fMid0.y, -M.fMid0.z) * M.fW0;
-  }
-  else if (mask == 3)
-  {
-    // Two hands: scale by their distance, turn about the vertical, move with their midpoint.
-    M.fW = translation(mid.x, mid.y, mid.z) * yaw(ang - M.fYaw0) * scaling(dist / M.fDist0) *
-           translation(-M.fMid0.x, -M.fMid0.y, -M.fMid0.z) * M.fW0;
-  }
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void PupilXr::render_eye(int e)
@@ -664,88 +846,12 @@ void PupilXr::render_eye(int e)
             n*std::tan(fov.angleDown), n*std::tan(fov.angleUp), n, f);
 
   // OpenXR's view space has GL's eye axes: the inverse eye pose, then the
-  // scene's placement, then the pupil's camera.
+  // scene's placement and the ridden frame's view.
   ZTrans view = pose_to_trans(M.fViews[e].pose);
   view.Invert();
+  ZTrans mv = view * M.fRig.RefFromWorld();
   glMatrixMode(GL_MODELVIEW);
-  try
-  {
-    P.SetAbsRelCamera();
-  }
-  catch (Exc_t& exc)
-  {
-    printf("PupilXr: camera setup failed: %s.\n", exc.Data());
-  }
-  // Ride the camera base, skipping camera nodes, which pitch and orbit: its
-  // frame, raised to the camera's height above it. A spirit that keeps its
-  // base on a surface then keeps the headset level on it, and the headset's
-  // forward is the base's. Without a base: the camera, levelled to +z.
-  const ZTrans &cam = P.mCamAbsTrans, &base = P.mCamBaseTrans;
-  ZNode *bn;
-  {
-    GLensReadHolder _lck(P.mInfo);
-    bn = P.mInfo->GetCameraBase();
-  }
-  while (bn && dynamic_cast<Camera*>(bn))
-  {
-    GLensReadHolder _lck(bn);
-    bn = bn->GetParent();
-  }
-  std::unique_ptr<ZTrans> nt(bn ? P.mInfo->ToPupilFrame(bn) : 0);
-  ZTrans b;
-  if (nt)
-  {
-    b = *nt;
-    Double_t h = 0;
-    for (int i = 0; i < 3; ++i) h += (cam.CM(i, 3) - b.CM(i, 3)) * b.CM(i, 2);
-    for (int i = 0; i < 3; ++i) b.CM(i, 3) += h * b.CM(i, 2);
-  }
-  else
-  {
-    ZPoint fwd(cam.CM(0, 0), cam.CM(1, 0), 0);
-    if (fwd.Mag2() < 1e-12) fwd.Set(1, 0, 0);
-    fwd.Normalize();
-    b.SetBaseVec(1, fwd);
-    b.SetBaseVec(2, ZPoint(-fwd.y, fwd.x, 0));
-    b.SetBaseVec(3, ZPoint(0, 0, 1));
-    b.SetBaseVec(4, ZPoint(cam.CM(0, 3), cam.CM(1, 3), cam.CM(2, 3)));
-  }
-  b.Invert();
-  // Gled's frame (x forward, y left, z up) to GL's eye axes (x right, y up, -z forward).
-  ZTrans axes;
-  axes.CM(0, 0) = 0; axes.CM(0, 1) = -1;
-  axes.CM(1, 1) = 0; axes.CM(1, 2) =  1;
-  axes.CM(2, 2) = 0; axes.CM(2, 0) = -1;
-  M.fLook = axes * b;
-  M.fBase = base;
-
-  if (e == 0)
-  {
-    const ZPoint h = M.head_pos();
-    if (M.bAlign)
-    {
-      // The camera under the head, its forward along the gaze, the start's scale.
-      M.fW = translation(h.x, 0, h.z) * yaw(yaw_of(pose_to_trans(M.fViews[0].pose))) * M.fWStart;
-      M.bAlign = false;
-    }
-    else if (M.bLookPrev)
-    {
-      // A turn of the base is a turn about the camera's place in the reference
-      // space, the translation of fW; move its pivot to the head: (1 - R)(h - c).
-      // Only the turn about the vertical, so a curved surface's tilts do not add up.
-      ZTrans d  = M.fW * M.fLook, d0 = M.fW * M.fLookPrev;
-      d0.Invert();
-      d = d * d0;
-      const Double_t a  = yaw_of(d), ca = std::cos(a), sa = std::sin(a);
-      const Double_t vx = h.x - M.fW.CM(0, 3), vz = h.z - M.fW.CM(2, 3);
-      M.fW = translation(vx - (ca*vx + sa*vz), 0, vz - (-sa*vx + ca*vz)) * M.fW;
-    }
-    M.fLookPrev = M.fLook;
-    M.bLookPrev = true;
-  }
-  ZTrans mv = view * M.fW;
   glLoadMatrixd(mv.Array());
-  glMultMatrixd(M.fLook.Array());
 
   P.rnr_default_init();
   // The placement scales, so normals need renormalising for lighting.
@@ -753,22 +859,62 @@ void PupilXr::render_eye(int e)
   P.Render(true, false);
   glDisable(GL_NORMALIZE);
 
-  if (M.bAimValid)
+  glLoadMatrixd(view.Array());
+  glPushAttrib(GL_ENABLE_BIT | GL_LINE_BIT | GL_CURRENT_BIT | GL_COLOR_BUFFER_BIT | GL_TEXTURE_BIT);
+  glDisable(GL_LIGHTING);
+  if (M.bPanelShown && M.fPanelHW > 0)
   {
-    // The laser, 30 m from the right hand.
-    const ZTrans &a = M.fAim;
-    glLoadMatrixd(view.Array());
-    glPushAttrib(GL_ENABLE_BIT | GL_LINE_BIT | GL_CURRENT_BIT);
-    glDisable(GL_LIGHTING);
+    // The panel: a dim backing, then the overlay's box over it.
+    glPushMatrix();
+    glMultMatrixd(M.fPanelFrame.Array());
+    const Double_t hw = M.fPanelHW, hh = M.fPanelHH;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.1f, 0.1f, 0.15f, 0.35f);
+    glBegin(GL_QUADS);
+    glVertex3d(-hw, -hh, 0); glVertex3d(hw, -hh, 0); glVertex3d(hw, hh, 0); glVertex3d(-hw, hh, 0);
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, M.fPanel.fTex);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glColor4f(1, 1, 1, 1);
+    const Float_t u0 = (Float_t) M.fBox[0] / P.w(), u1 = (Float_t) M.fBox[2] / P.w();
+    const Float_t v0 = (Float_t) M.fBox[1] / P.h(), v1 = (Float_t) M.fBox[3] / P.h();
+    glBegin(GL_QUADS);
+    glTexCoord2f(u0, v0); glVertex3d(-hw, -hh, 0.001);
+    glTexCoord2f(u1, v0); glVertex3d( hw, -hh, 0.001);
+    glTexCoord2f(u1, v1); glVertex3d( hw,  hh, 0.001);
+    glTexCoord2f(u0, v1); glVertex3d(-hw,  hh, 0.001);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+    glPopMatrix();
+  }
+  if (M.bAimValid)
+  {
+    // The laser from the right hand, to the panel when it is on it.
+    const ZPoint a = pos_of(M.fAim), d = axis_of(M.fAim, 2) * -M.fLaserLen;
     glLineWidth(3);
-    if (M.bSelectDown) glColor3f(1, 1, 0.3f); else glColor3f(1, 0.25f, 0.1f);
+    if (M.bTriggerPrev) glColor3f(1, 1, 0.3f); else glColor3f(1, 0.25f, 0.1f);
     glBegin(GL_LINES);
-    glVertex3d(a.CM(0, 3), a.CM(1, 3), a.CM(2, 3));
-    glVertex3d(a.CM(0, 3) - 30*a.CM(0, 2), a.CM(1, 3) - 30*a.CM(1, 2), a.CM(2, 3) - 30*a.CM(2, 2));
+    glVertex3d(a.x, a.y, a.z);
+    glVertex3d(a.x + d.x, a.y + d.y, a.z + d.z);
     glEnd();
-    glPopAttrib();
+  }
+  glPopAttrib();
+
+  if (e == 0 && M.bMirror)
+  {
+    // The middle of the left eye, at the window's aspect, for the desktop.
+    const Int_t w = P.w(), h = P.h();
+    M.fMirror.ensure(w, h, false);
+    Int_t sw = E.fW, sh = E.fH;
+    if ((Double_t) w / h > (Double_t) sw / sh) sh = sw * h / w; else sw = sh * w / h;
+    const Int_t sx = (E.fW - sw) / 2, sy = (E.fH - sh) / 2;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, E.fFBO);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, M.fMirror.fFBO);
+    glBlitFramebuffer(sx, sy, sx + sw, sy + sh, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
   }
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -778,17 +924,17 @@ void PupilXr::render_eye(int e)
 
 void PupilXr::frame()
 {
-  Impl &M = *m;
+  Impl  &M = *m;
+  Pupil &P = *M.fPupil;
 
   if ( ! poll_events())
   {
     printf("PupilXr: session ended after %lld frames.\n", M.fFrames);
     fflush(stdout);
     sticks_off();
-    Pupil *pupil = M.fPupil;
-    pupil->mXr = 0;
+    P.mXr = 0;
     delete this;
-    pupil->redraw();
+    P.redraw();
     return;
   }
   if ( ! M.bRunning)
@@ -800,7 +946,7 @@ void PupilXr::frame()
   const GTime t0 = GTime::Now();
   if (M.fFrames > 0) M.fGapSum += (t0 - M.fFrameEnd).ToDouble();
 
-  M.fPupil->make_current();
+  P.make_current();
 
   XrFrameWaitInfo wi { XR_TYPE_FRAME_WAIT_INFO };
   XrFrameState    fs { XR_TYPE_FRAME_STATE };
@@ -811,51 +957,87 @@ void PupilXr::frame()
   XrFrameBeginInfo bi { XR_TYPE_FRAME_BEGIN_INFO };
   if ( ! M.ok(xrBeginFrame(M.fSession, &bi), "xrBeginFrame")) return;
 
-  update_input(fs.predictedDisplayTime);
+  const XrTime   t  = fs.predictedDisplayTime;
+  const Double_t dt = M.fLastTime ? TMath::Min(1e-9 * (t - M.fLastTime), 0.1) : 0;
+  M.fLastTime = t;
+
+  // The eyes, the head between them, and the frame the headset rides.
+  M.bViewsOk = false;
+  if (fs.shouldRender)
+  {
+    XrViewLocateInfo li { XR_TYPE_VIEW_LOCATE_INFO };
+    li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    li.displayTime           = t;
+    li.space                 = M.fSpace;
+    XrViewState vs { XR_TYPE_VIEW_STATE };
+    uint32_t    n_views = 0;
+    M.ok(xrLocateViews(M.fSession, &li, &vs, 2, &n_views, M.fViews), "xrLocateViews");
+    const XrViewStateFlags valid = XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_VALID_BIT;
+    if (n_views == 2 && (vs.viewStateFlags & valid) == valid)
+    {
+      M.fHead = pose_to_trans(M.fViews[0].pose);
+      const XrVector3f &a = M.fViews[0].pose.position, &b = M.fViews[1].pose.position;
+      M.fHead.CM(0, 3) = (a.x + b.x) / 2;
+      M.fHead.CM(1, 3) = (a.y + b.y) / 2;
+      M.fHead.CM(2, 3) = (a.z + b.z) / 2;
+      try
+      {
+        ZTrans ride = P.RideFrame();
+        ride.Invert();
+        // Gled's frame (x forward, y left, z up) to GL's eye axes (x right, y up, -z forward).
+        ZTrans axes;
+        axes.CM(0, 0) = 0; axes.CM(0, 1) = -1;
+        axes.CM(1, 1) = 0; axes.CM(1, 2) =  1;
+        axes.CM(2, 2) = 0; axes.CM(2, 0) = -1;
+        M.fLook  = axes * ride;
+        M.fBase  = P.mCamBaseTrans;
+        M.bViewsOk = true;
+      }
+      catch (Exc_t& exc)
+      {
+        printf("PupilXr: camera setup failed: %s.\n", exc.Data());
+      }
+    }
+  }
+
+  Input in;
+  read_input(in, t);
+  act(in, dt);
 
   XrCompositionLayerProjectionView pv[2];
   XrCompositionLayerProjection     layer { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
   const XrCompositionLayerBaseHeader *layers[1];
   uint32_t n_layers = 0;
-
-  if (fs.shouldRender)
+  if (M.bViewsOk)
   {
-    XrViewLocateInfo li { XR_TYPE_VIEW_LOCATE_INFO };
-    li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-    li.displayTime           = fs.predictedDisplayTime;
-    li.space                 = M.fSpace;
-    XrViewState vs { XR_TYPE_VIEW_STATE };
-    uint32_t    n_views = 0;
-    M.ok(xrLocateViews(M.fSession, &li, &vs, 2, &n_views, M.fViews), "xrLocateViews");
-
-    const XrViewStateFlags valid = XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_VALID_BIT;
-    if (n_views == 2 && (vs.viewStateFlags & valid) == valid)
+    // Every xrBeginFrame needs its xrEndFrame.
+    try { render_panel(); }
+    catch (Exc_t& exc) { printf("PupilXr: panel render failed: %s.\n", exc.Data()); }
+    for (int e = 0; e < 2; ++e)
     {
-      for (int e = 0; e < 2; ++e)
-      {
-        // Every xrBeginFrame needs its xrEndFrame.
-        try { render_eye(e); }
-        catch (Exc_t& exc) { printf("PupilXr: render failed: %s.\n", exc.Data()); }
+      try { render_eye(e); }
+      catch (Exc_t& exc) { printf("PupilXr: render failed: %s.\n", exc.Data()); }
 
-        pv[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-        pv[e].pose                      = M.fViews[e].pose;
-        pv[e].fov                       = M.fViews[e].fov;
-        pv[e].subImage.swapchain        = M.fEyes[e].fSwapchain;
-        pv[e].subImage.imageRect.extent = { M.fEyes[e].fW, M.fEyes[e].fH };
-      }
-      layer.space     = M.fSpace;
-      layer.viewCount = 2;
-      layer.views     = pv;
-      layers[n_layers++] = (const XrCompositionLayerBaseHeader*) &layer;
+      pv[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+      pv[e].pose                      = M.fViews[e].pose;
+      pv[e].fov                       = M.fViews[e].fov;
+      pv[e].subImage.swapchain        = M.fEyes[e].fSwapchain;
+      pv[e].subImage.imageRect.extent = { M.fEyes[e].fW, M.fEyes[e].fH };
     }
+    layer.space     = M.fSpace;
+    layer.viewCount = 2;
+    layer.views     = pv;
+    layers[n_layers++] = (const XrCompositionLayerBaseHeader*) &layer;
   }
 
   XrFrameEndInfo ei { XR_TYPE_FRAME_END_INFO };
-  ei.displayTime          = fs.predictedDisplayTime;
+  ei.displayTime          = t;
   ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
   ei.layerCount           = n_layers;
   ei.layers               = layers;
   M.ok(xrEndFrame(M.fSession, &ei), "xrEndFrame");
+  if (M.bMirror) P.redraw();
+
   M.fFrameEnd = GTime::Now();
   M.fWorkSum += (M.fFrameEnd - t1).ToDouble();
   if (M.fFrames++ % 600 == 0)
@@ -891,8 +1073,9 @@ bool PupilXr::Init()
   return false;
 }
 
-bool PupilXr::RequestExit() { return false; }
-
-void PupilXr::IdleCallback(void* pxr) {}
+bool PupilXr::RequestExit()          { return false; }
+bool PupilXr::Mirroring() const      { return false; }
+void PupilXr::DrawMirror(int, int)   {}
+void PupilXr::IdleCallback(void*)    {}
 
 #endif

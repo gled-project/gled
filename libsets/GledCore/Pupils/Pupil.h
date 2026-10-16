@@ -110,6 +110,8 @@ public:
   void SetProjection(Int_t n_tiles=1, Int_t x_i=0, Int_t y_i=0);
   void SetAbsRelCamera();
   void SetCameraView();
+  // The frame a headset rides, x forward, y left, z up, in the pupil's world.
+  ZTrans RideFrame();
 
   void TurnCamTowards(ZGlass* lens, Float_t max_dist);
 

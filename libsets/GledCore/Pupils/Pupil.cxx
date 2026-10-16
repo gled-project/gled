@@ -36,6 +36,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <memory>
 
 using namespace gled;
 
@@ -607,6 +608,48 @@ void Pupil::SetCameraView()
 	    Up [0],        Up [1],        Up [2]);
 }
 
+ZTrans Pupil::RideFrame()
+{
+  // The camera base, skipping camera nodes, which pitch and orbit, raised to
+  // the camera's height above it: a spirit that keeps its base on a surface
+  // keeps a headset level on it. Without a base: the camera, levelled to +z.
+
+  SetAbsRelCamera();
+
+  ZNode *n;
+  {
+    GLensReadHolder _lck(mInfo);
+    n = mInfo->GetCameraBase();
+  }
+  while (n && dynamic_cast<Camera*>(n))
+  {
+    GLensReadHolder _lck(n);
+    n = n->GetParent();
+  }
+  std::unique_ptr<ZTrans> nt(n ? mInfo->ToPupilFrame(n) : 0);
+
+  const ZTrans &cam = mCamAbsTrans;
+  ZTrans b;
+  if (nt)
+  {
+    b = *nt;
+    Double_t h = 0;
+    for (int i = 0; i < 3; ++i) h += (cam.CM(i, 3) - b.CM(i, 3)) * b.CM(i, 2);
+    for (int i = 0; i < 3; ++i) b.CM(i, 3) += h * b.CM(i, 2);
+  }
+  else
+  {
+    ZPoint fwd(cam.CM(0, 0), cam.CM(1, 0), 0);
+    if (fwd.Mag2() < 1e-12) fwd.Set(1, 0, 0);
+    fwd.Normalize();
+    b.SetBaseVec(1, fwd);
+    b.SetBaseVec(2, ZPoint(-fwd.y, fwd.x, 0));
+    b.SetBaseVec(3, ZPoint(0, 0, 1));
+    b.SetBaseVec(4, ZPoint(cam.CM(0, 3), cam.CM(1, 3), cam.CM(2, 3)));
+  }
+  return b;
+}
+
 /**************************************************************************/
 
 void Pupil::TurnCamTowards(ZGlass* lens, Float_t max_dist)
@@ -1079,12 +1122,17 @@ void Pupil::draw()
   }
   bXrStartPending = false;
 
-  // For measuring: with GLED_XR_NO_DESKTOP, the headset alone renders the scene.
-  static bool s_xr_no_desktop = getenv("GLED_XR_NO_DESKTOP") != 0;
-  if (mXr && s_xr_no_desktop)
+  // During a headset session the window mirrors the left eye. A redraw that
+  // was asked to signal is still signalled: an eventor may wait for it.
+  if (mXr && mXr->Mirroring())
   {
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    mXr->DrawMirror(w(), h());
+    if (bSignalDumpFinish)
+    {
+      mInfo->ReceiveDumpFinishedSignal();
+      bSignalDumpFinish = false;
+    }
+    check_driver_redraw();
     return;
   }
 
@@ -1641,6 +1689,13 @@ int Pupil::handle(int ev)
   if (ev == FL_PUSH && Fl::focus() != this)
   {
     take_focus();
+  }
+
+  // A mirroring window shows the headset's view, which the mouse does not pick in.
+  if (mXr && mXr->Mirroring() &&
+      (ev == FL_PUSH || ev == FL_RELEASE || ev == FL_DRAG || ev == FL_MOVE || ev == FL_MOUSEWHEEL))
+  {
+    return 1;
   }
 
   // One key-down and one key-up per key press; drop autorepeat key-downs.
