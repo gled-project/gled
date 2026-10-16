@@ -27,7 +27,9 @@ using namespace gled;
 void WSWalker::_init()
 {
   bLoop = false;
+  bFlight = false; mGravity = 9.81; mFlightTau = 0.2;
   m_last_time = 1e30;
+  m_up_ok = false;
 }
 
 /**************************************************************************/
@@ -38,6 +40,7 @@ void WSWalker::set_trans(Double_t t)
     {
       GLensWriteHolder node_wrlck(*mSeed);
       mSeed->TransAtTime(m_last_trans, t, bLoop, (t < m_last_time));
+      if(bFlight) fly(t);
     }
     {
       GLensWriteHolder node_wrlck(*mNode);
@@ -45,6 +48,35 @@ void WSWalker::set_trans(Double_t t)
     }
     m_last_time = t;
   }
+}
+
+void WSWalker::fly(Double_t t)
+{
+  // Under the seed's lock: replaces the up of m_last_trans.
+
+  ZPoint pos, vel, acc;
+  mSeed->MotionAtTime(t, pos, vel, acc, bLoop);
+
+  const Double_t *ax = m_last_trans.ArrX(), *az = m_last_trans.ArrZ();
+  const ZPoint x(ax[0], ax[1], ax[2]);
+  ZPoint up = m_up_ok ? m_up : ZPoint(az[0], az[1], az[2]);
+
+  // Near weightlessness the felt force has no direction; the up stays.
+  ZPoint f = acc;
+  f.z += mGravity;
+  f -= x * f.Dot(x);
+  if(f.Mag() > 0.2*mGravity) {
+    f.Normalize();
+    const Double_t dt = t - m_last_time;
+    const Double_t k  = (mFlightTau > 0 && dt >= 0 && dt < 1) ? 1 - TMath::Exp(-dt/mFlightTau) : 1;
+    up += (f - up) * k;
+  }
+  up -= x * up.Dot(x);
+  up.Normalize();
+
+  m_last_trans.SetBaseVec(2, up.Cross(x));
+  m_last_trans.SetBaseVec(3, up);
+  m_up = up; m_up_ok = true;
 }
 
 /**************************************************************************/

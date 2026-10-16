@@ -1,6 +1,8 @@
 // simple scene with a Weaver Symbol
 // Use "ZNode(Pos,Rot):WSPoint(W,S,T)" as custom view for best performance.
 //
+// lift: height of the seed's waves out of its plane, 0 for a flat seed.
+//
 // vars: ZQueen* g_queen
 // libs: Geom1
 
@@ -12,7 +14,7 @@
 
 using namespace gled;
 
-void WS_demo()
+void WS_demo(Double_t lift=0)
 {
   ASSERT_MACRO(sun_demos);
   Gled::theOne->AssertLibSet("Geom1");
@@ -78,9 +80,13 @@ void WS_demo()
     double phi = i*TMath::Pi()/4;
     double ss = TMath::Sin(phi);
     double cc = TMath::Cos(phi);
-    points[i]->SetPos(i*cc, i*ss, 0);
+    // With lift, the seed waves out of its plane, so a rider along it rolls.
+    double z  = lift*TMath::Sin(phi);
+    points[i]->SetPos(i*cc, i*ss, z);
     double der = TMath::ATan2(ss+phi*cc, cc-phi*ss);
     points[i]->RotateLF(1,2, der);
+    double dxy = TMath::Sqrt(16/(TMath::Pi()*TMath::Pi()) + i*i);
+    points[i]->RotateLF(1,3, TMath::ATan2(lift*cc, dxy));
     points[i]->SetW(i*0.1);
     g_queen->CheckIn(points[i]); seed1->Add(points[i]);
   }

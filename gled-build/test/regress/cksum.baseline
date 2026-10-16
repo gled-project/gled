@@ -60,7 +60,7 @@ gled::PerfMeterOperator ver=1 cksum=328007497
 gled::PerfMeterTarget ver=1 cksum=797348286
 gled::PipeEventor ver=1 cksum=842783455
 gled::Planetes ver=1 cksum=911248771
-gled::PupilInfo ver=1 cksum=771440397
+gled::PupilInfo ver=1 cksum=3094439281
 gled::RGBAPalette ver=1 cksum=2649469427
 gled::Rect ver=1 cksum=2364755968
 gled::RectTerrain ver=1 cksum=978100126
@@ -81,7 +81,7 @@ gled::Spheror ver=1 cksum=3225951581
 gled::Spiritio ver=1 cksum=1775462778
 gled::Statico ver=1 cksum=2874407988
 gled::SubShellInfo ver=1 cksum=1007874419
-gled::TSPupilInfo ver=1 cksum=3724990160
+gled::TSPupilInfo ver=1 cksum=922851452
 gled::Text ver=1 cksum=2711827657
 gled::TimeMaker ver=1 cksum=2713158212
 gled::TimeScreenText ver=1 cksum=1122748664
@@ -100,9 +100,9 @@ gled::WGlFrameStyle ver=1 cksum=327622718
 gled::WGlValuator ver=1 cksum=3302421789
 gled::WGlWidget ver=1 cksum=2617005416
 gled::WSPoint ver=1 cksum=1232584935
-gled::WSSeed ver=1 cksum=1923671535
-gled::WSTube ver=1 cksum=997177933
-gled::WSWalker ver=1 cksum=3281749259
+gled::WSSeed ver=1 cksum=4148481573
+gled::WSTube ver=1 cksum=3406603459
+gled::WSWalker ver=1 cksum=2018816611
 gled::WarmAmoeba ver=1 cksum=313852992
 gled::ZCometBag ver=1 cksum=4005967692
 gled::ZDeque ver=1 cksum=65183156

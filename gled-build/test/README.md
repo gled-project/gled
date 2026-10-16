@@ -151,6 +151,18 @@ cd $GLEDSYS/demos/GledCore
 timeout 30 saturn --noprompt $GLEDSYS/test/regress/xr_rig.C < /dev/null
 ```
 
+**`ws_motion.C`** checks the motion along a `WSSeed` and the cart's up, without
+a display: `MotionAtTime`'s velocity and acceleration are the derivatives of
+its position; with `UpFromPoints` the up is the point's z axis at each point
+and a unit vector normal to the tangent between them; `WSWalker`'s flight mode
+banks a cart on a level circle by the angle of a coordinated turn,
+tan b = v² / (r g). It must print `ws_motion: all passed`:
+
+```sh
+cd $GLEDSYS/demos/Geom1
+timeout 60 saturn --noprompt $GLEDSYS/test/regress/ws_motion.C < /dev/null
+```
+
 **`patches.C`** builds terrain patches on three GTS spheres with
 `TriMesh::BuildPatches()` and checks the patch table of `TringTvor`: the reorder
 keeps the triangles, the patches tile them, the boxes and normal cones hold

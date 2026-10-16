@@ -35,6 +35,7 @@ protected:
   WSPoint* get_first_point();
 
   ZTrans* init_slide(WSPoint* f);
+  WSPoint* segment_at(Double_t time, Bool_t repeat_p, Double_t& t, Double_t& dur);
   void ring(ZTrans& lcf, WSPoint* f, Double_t t);
 
   Int_t		mTLevel;	// X{GST}  7 Value(-range=>[2,1000,1,1],-join=>1)
@@ -52,6 +53,9 @@ protected:
   ZColor	mColor;		// X{PGST} 7 ColorButt(-join=>1)
   Float_t	mLineW;		// X{GST}  7 Value(-range=>[0,128,1,100],-join=>1)
   Bool_t	bFat;		// X{GST}  7 Bool()
+  // A walker's up: from the points' z axes, as a cart on a banked track, or
+  // transported along the curve from the first point's.
+  Bool_t	bUpFromPoints;	// X{GS}   7 Bool()
 
   ZLink<ZImage>	mTexture;	// X{gS} L{} RnrBits{4,0,5,0, 0,0,0,0}
 
@@ -92,6 +96,8 @@ public:
 
   void TransAtTime(ZTrans& lcf, Double_t time,
 		   Bool_t repeat_p=false, Bool_t reinit_trans_p=false);
+  void MotionAtTime(Double_t time, ZPoint& pos, ZPoint& vel, ZPoint& acc,
+		    Bool_t repeat_p=false);
 
   // TimeMakerClient
   virtual void TimeTick(Double_t t, Double_t dt);

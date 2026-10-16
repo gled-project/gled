@@ -144,7 +144,7 @@ void xr_rig()
   // A ridden frame that pitches as it moves: riding keeps its up as the
   // reference space's up; level mode keeps the up of recentering.
   XrRig ridden(0.2), level(0.2);
-  level.bLevel = true;
+  level.SetLevel(true);
   ZTrans car;
   car.SetBaseVec(4, ZPoint(3, 1, 0));
   const ZPoint world_up(0, 0, 1);

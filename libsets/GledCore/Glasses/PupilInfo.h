@@ -23,6 +23,7 @@ class PupilInfo : public SubShellInfo
 
 public:
   enum Projection_e { P_Perspective, P_Orthographic };
+  enum XrTilt_e     { XT_Ride, XT_Level };
   enum PrivRayQN_e  { PRQN_offset = RayNS::RQN_user_0,
 		      PRQN_resize_window,
 		      PRQN_camera_home,
@@ -111,6 +112,9 @@ protected:
   Double_t      mStereoZeroParallax;   // X{GS} 7 Value(-range=>[-1,1, 1,1000])
   Double_t      mStereoEyeOffsetFac;   // X{GS} 7 Value(-range=>[ 0,2, 1,1000])
   Double_t      mStereoFrustumAsymFac; // X{GS} 7 Value(-range=>[ 0,2, 1,1000])
+
+  // In a headset, the camera base's tilts reach the head, or the world stays level.
+  XrTilt_e      mXrTilt;               // X{GS} 7 PhonyEnum()
 
   // Locals where GL renderer stores actual parameters used for last render.
   // Protect with a lock?

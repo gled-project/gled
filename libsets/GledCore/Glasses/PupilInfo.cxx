@@ -58,6 +58,7 @@ void PupilInfo::_init()
   mUpRefMinAngle = 10;
 
   mProjMode = P_Perspective;
+  mXrTilt   = XT_Ride;
   mZFov     = 90;   mZSize    = 20;
   mYFac     = 1;    mXDist    = 10;
   mNearClip = 0.01; mFarClip  = 100;

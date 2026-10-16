@@ -18,8 +18,8 @@ class XrRig
 {
   ZTrans    fW, fWStart;   // Ridden frame's GL eye coordinates, gled units, to metres.
   ZTrans    fLook;
-  bool      bRecenter, bRealign;
-  ZPoint    fUp;           // The ridden frame's up at recentering, in world coordinates.
+  bool      bRecenter, bRealign, bLevel, bKeepUp;
+  ZPoint    fUp;           // The world's up kept in level mode, in world coordinates.
 
   Int_t     fGrabMask;     // Hands holding: 1 left, 2 right; -1 to re-anchor.
   ZTrans    fW0;           // fW when the hands took hold,
@@ -30,7 +30,6 @@ class XrRig
 
 public:
   Double_t  fFlyAccel;     // Of a fully pushed stick, in metres per second squared.
-  bool      bLevel;        // Undo the ridden frame's tilts: keep its up of recentering up.
 
   XrRig(Double_t metres_per_unit=0.2);
 
@@ -43,6 +42,8 @@ public:
   // At the next Follow: turn the scene about the head so the ridden frame
   // faces the gaze; keeps the place and the scale.
   void Realign();
+  // Undo the ridden frame's tilts, keeping its up of now, or let them reach the head.
+  void SetLevel(bool level);
 
   // Hands that hold, in the reference space, 0 for one that does not.
   // Returns whether any holds.

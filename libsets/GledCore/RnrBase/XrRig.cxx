@@ -51,9 +51,9 @@ Double_t XrRig::YawOf(const ZTrans& t)
 //==============================================================================
 
 XrRig::XrRig(Double_t metres_per_unit) :
-  bRecenter(true), bRealign(false),
+  bRecenter(true), bRealign(false), bLevel(false), bKeepUp(false),
   fGrabMask(0), fDist0(1), fYaw0(0),
-  fSpeed(0), fFlyAccel(3), bLevel(false)
+  fSpeed(0), fFlyAccel(3)
 {
   fW = fWStart = Scaling(metres_per_unit);
 }
@@ -81,21 +81,31 @@ void XrRig::Realign()
   fSpeed   = 0;
 }
 
+void XrRig::SetLevel(bool level)
+{
+  if (level && ! bLevel) bKeepUp = true;
+  bLevel = level;
+}
+
 void XrRig::Follow(const ZTrans& look, const ZTrans& head)
 {
   const ZPoint h = pos_of(head);
   fLook = look;
-  if (bRecenter)
+  if (bRecenter || bKeepUp)
   {
-    fW        = Translation(h.x, h.y, h.z) * Yaw(YawOf(head)) * fWStart;
-    fGrabMask = -1;
-    bRecenter = bRealign = false;
     // The ridden frame's up, GL's +y, in world coordinates.
     ZTrans inv(fLook);
     inv.Invert();
     fUp.Set(0, 1, 0);
     inv.RotateIP(fUp);
     fUp.Normalize();
+    bKeepUp = false;
+  }
+  if (bRecenter)
+  {
+    fW        = Translation(h.x, h.y, h.z) * Yaw(YawOf(head)) * fWStart;
+    fGrabMask = -1;
+    bRecenter = bRealign = false;
   }
   else if (bLevel)
   {

@@ -290,7 +290,6 @@ PupilXr::PupilXr(Pupil* pupil) : m(new Impl)
   for (auto &v : m->fViews) v = { XR_TYPE_VIEW };
   if (const char* s = getenv("GLED_XR_SCALE")) m->fRig = XrRig(atof(s));
   if (const char* s = getenv("GLED_XR_FLY"))   m->fRig.fFlyAccel = atof(s);
-  if (const char* s = getenv("GLED_XR_LEVEL")) m->fRig.bLevel    = atoi(s) != 0;
   m->bMirror = getenv("GLED_XR_DESKTOP") == 0;
 }
 
@@ -612,6 +611,7 @@ void PupilXr::act(const Input& in, double dt)
   // A held recenters. A short press recenters when a spirit moves the camera,
   // and otherwise only realigns, keeping where flying and grabbing put the scene.
   const bool spirit = P.mEventHandlerImg && P.bUseEventHandler;
+  M.fRig.SetLevel(P.mInfo->GetXrTilt() == PupilInfo::XT_Level);
   if (in.bHome || (in.bRecenter && spirit)) M.fRig.Recenter();
   else if (in.bRecenter)                    M.fRig.Realign();
   if (in.bPanelToggle) M.bPanelOn = ! M.bPanelOn;

@@ -43,7 +43,7 @@ void WSSeed::_init()
 
   mTrueLength = 0; bRenormLen = false; mLength = 1;
 
-  mLineW = 2; bFat = true;
+  mLineW = 2; bFat = true; bUpFromPoints = false;
 
   mTexture = 0;
 
@@ -256,9 +256,76 @@ void WSSeed::TransAtTime(ZTrans& lcf, Double_t time, Bool_t repeat_p, Bool_t rei
 {
   // Positions lcf to time.
   // If repeat_p is true, the time is clamped into the range.
-  // 'Up' and 'right' axes are Gram-Schmidt orto-normalized wrt 'front'.
+  // 'Up' and 'right' axes are Gram-Schmidt orto-normalized wrt 'front',
+  // or with bUpFromPoints interpolated from the points' z axes.
 
-  static const Exc_t _eh("WSSeed::TransAtTime ");
+  Double_t t, dur;
+  WSPoint *a = segment_at(time, repeat_p, t, dur);
+
+  if(reinit_trans_p)
+    lcf = a->RefTrans();
+
+  const Double_t t2 = t*t, t3 = t2*t;
+  Double_t* Pnt = lcf.ArrT();
+  Double_t* Axe = lcf.ArrX();
+
+  for(Int_t i=0; i<3; i++) {
+    const TMatrixDRow R( a->mCoffs[i] );
+    Pnt[i] = R[0] +   R[1]*t +   R[2]*t2 + R[3]*t3;
+    Axe[i] = R[1] + 2*R[2]*t + 3*R[3]*t2;
+  }
+
+  if(bUpFromPoints) {
+    const Double_t *za = a->RefTrans().ArrZ(), *zb = a->mNextPoint->RefTrans().ArrZ();
+    ZPoint x(Axe[0], Axe[1], Axe[2]);
+    x.Normalize();
+    ZPoint z((1-t)*za[0] + t*zb[0], (1-t)*za[1] + t*zb[1], (1-t)*za[2] + t*zb[2]);
+    z -= x * z.Dot(x);
+    z.Normalize();
+    lcf.SetBaseVec(1, x);
+    lcf.SetBaseVec(2, z.Cross(x));
+    lcf.SetBaseVec(3, z);
+  } else {
+    lcf.OrtoNorm3();
+  }
+}
+
+void WSSeed::MotionAtTime(Double_t time, ZPoint& pos, ZPoint& vel, ZPoint& acc,
+                          Bool_t repeat_p)
+{
+  // Position, velocity and acceleration at time; a segment takes its first
+  // point's stretch in time.
+
+  Double_t t, dur;
+  WSPoint *a = segment_at(time, repeat_p, t, dur);
+
+  const Double_t t2 = t*t;
+  for(Int_t i=0; i<3; i++) {
+    const TMatrixDRow R( a->mCoffs[i] );
+    pos[i] =  R[0] +   R[1]*t +   R[2]*t2 + R[3]*t2*t;
+    vel[i] = (R[1] + 2*R[2]*t + 3*R[3]*t2) / dur;
+    acc[i] = (2*R[2] + 6*R[3]*t) / (dur*dur);
+  }
+}
+
+/**************************************************************************/
+// Protected
+/**************************************************************************/
+
+WSPoint* WSSeed::get_first_point()
+{
+  GMutexHolder lmh(mListMutex);
+  Stepper<WSPoint> s(this);
+  if(s.step()) return *s;
+  return 0;
+}
+
+WSPoint* WSSeed::segment_at(Double_t time, Bool_t repeat_p, Double_t& t, Double_t& dur)
+{
+  // The segment's first point, with its coefficients computed, the Hermite
+  // parameter t of time in it, and the segment's duration.
+
+  static const Exc_t _eh("WSSeed::segment_at ");
 
   if(m_num_points < 2)
     throw(_eh + "nedd at least two points.");
@@ -284,8 +351,6 @@ void WSSeed::TransAtTime(ZTrans& lcf, Double_t time, Bool_t repeat_p, Bool_t rei
     }
   }
 
-  // printf("OK ... came up with time=%f\n", time);
-
   Double_t done = 0;
   WSPoint *a, *b;
   b = m_first_point;
@@ -293,7 +358,7 @@ void WSSeed::TransAtTime(ZTrans& lcf, Double_t time, Bool_t repeat_p, Bool_t rei
     done += a->mStretch * len_fac;
     if(done >= time) break;
   }
-  Double_t t;
+
   if(b != 0) {
     t = 1  -  (done - time) / (a->mStretch * len_fac);
   } else {
@@ -301,33 +366,8 @@ void WSSeed::TransAtTime(ZTrans& lcf, Double_t time, Bool_t repeat_p, Bool_t rei
     b = a; a = b->mPrevPoint;
   }
   a->Coff(b);
-
-  if(reinit_trans_p)
-    lcf = a->RefTrans();
-
-  const Double_t t2 = t*t, t3 = t2*t;
-  Double_t* Pnt = lcf.ArrT();
-  Double_t* Axe = lcf.ArrX();
-
-  for(Int_t i=0; i<3; i++) {
-    const TMatrixDRow R( a->mCoffs[i] );
-    Pnt[i] = R[0] +   R[1]*t +   R[2]*t2 + R[3]*t3;
-    Axe[i] = R[1] + 2*R[2]*t + 3*R[3]*t2;
-  }
-
-  lcf.OrtoNorm3();
-}
-
-/**************************************************************************/
-// Protected
-/**************************************************************************/
-
-WSPoint* WSSeed::get_first_point()
-{
-  GMutexHolder lmh(mListMutex);
-  Stepper<WSPoint> s(this);
-  if(s.step()) return *s;
-  return 0;
+  dur = a->mStretch * len_fac;
+  return a;
 }
 
 ZTrans* WSSeed::init_slide(WSPoint* f)

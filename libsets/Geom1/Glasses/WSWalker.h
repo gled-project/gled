@@ -27,11 +27,21 @@ protected:
 
   Bool_t         bLoop; // X{GS} 7 Bool()
 
+  // Flight: the node's up follows the felt force, acceleration minus gravity
+  // (-z of the seed, in units per s^2), as in a coordinated turn, smoothed over
+  // a time constant in s.
+  Bool_t         bFlight;    // X{GS} 7 Bool(-join=>1)
+  Double_t       mGravity;   // X{GS} 7 Value(-range=>[0,1e4,1,100], -join=>1)
+  Double_t       mFlightTau; // X{GS} 7 Value(-range=>[0,10,1,1000])
+
   void set_trans(Double_t t);
+  void fly(Double_t t);
 
   // Local cache
   Double_t m_last_time;  //!
   ZTrans   m_last_trans; //!
+  ZPoint   m_up;         //!
+  Bool_t   m_up_ok;      //!
 
 
 public:
