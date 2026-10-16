@@ -37,6 +37,7 @@ void TringuRep::_init()
   mActionBorder = 0.5;
 
   bSprayDLWasOn = false;
+  mTerrainProps = -1;
 }
 
 TringuRep::TringuRep(const Text_t* n, const Text_t* t) :
@@ -142,6 +143,8 @@ void TringuRep::refresh_color_arrays()
 
   if (*mField)
     mField->ApplyColors(*mLightField == 0);
+  else if (mTerrainProps >= 0)
+    color_by_terrain_props("TringuRep::refresh_color_arrays ");
 
   if (*mLightField)
     mLightField->ModulateColors(true);
@@ -174,6 +177,7 @@ void TringuRep::ActivateField(TriMeshField* field)
       GLensWriteHolder lck(this);
       set_link_or_die(mField.ref_link(), field, FID());
     }
+    if (field) mTerrainProps = -1;
 
     if (field)
     {
@@ -257,13 +261,19 @@ void TringuRep::ColorByTerrainProps(Int_t mode)
 
   suggest_MIR_presence(_eh, MC_IsDetached);
 
+  // The colours are rebuilt from mode whenever the fields change, so that
+  // switching the light field off restores them.
+  mTerrainProps = mode;
   ActivateField(0);
   ActivateLightField(0);
+}
 
-  assert_palette(_eh);
+void TringuRep::color_by_terrain_props(const Exc_t& eh)
+{
+  assert_palette(eh);
 
   TriMesh* mesh = mTringula->GetMesh();
-  switch (mode)
+  switch (mTerrainProps)
   {
     case 0:
       mesh->ColorByParaSurfCoord(*mPalette, this, 2);
@@ -272,7 +282,7 @@ void TringuRep::ColorByTerrainProps(Int_t mode)
       mesh->ColorByParaSurfNormal(*mPalette, this, 2, 0.3, 1);
       break;
     default:
-      ISwarn(_eh + "Unsupported mode.");
+      ISwarn(eh + "Unsupported mode.");
   }
 }
 

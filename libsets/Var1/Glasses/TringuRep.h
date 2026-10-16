@@ -49,9 +49,11 @@ protected:
   Float_t       mActionBorder;  // X{GS} 7 Value(-range=>[   0,   10, 1,100], -tooltip=>"extra border where value falls off linearly")
 
   Bool_t        bSprayDLWasOn;  //!
+  Int_t         mTerrainProps;  //! ColorByTerrainProps mode the colours come from, or -1.
 
   void update_triangle_color_array();
   void refresh_color_arrays();
+  void color_by_terrain_props(const Exc_t& eh);
 
 public:
   TringuRep(const Text_t* n="TringuRep", const Text_t* t=0);
