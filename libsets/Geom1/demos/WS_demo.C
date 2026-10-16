@@ -116,7 +116,8 @@ void WS_demo()
   tube2->Connect();
 
   CREATE_ADD_GLASS(etor, Eventor, wsdemo, "Eventor", 0);
-  etor->SetInterBeatMS(50);
+  // In the headset, about one beat per frame at 90 Hz.
+  etor->SetInterBeatMS(gSystem->Getenv("GLED_XR") ? 11 : 50);
   CREATE_ADD_GLASS(tmaker, TimeMaker, etor, "TimeMaker", 0);
   CREATE_ATT_GLASS(wker, WSWalker, tmaker, AddClient, "WSWalker", 0);
   wker->SetLoop(true);

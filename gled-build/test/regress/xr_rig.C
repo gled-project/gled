@@ -55,36 +55,42 @@ void xr_rig()
   ride.SetBaseVec(4, ZPoint(10, 5, 2));
   const ZPoint ride_pos(10, 5, 2);
 
-  // Recentering: the frame under the head, its forward along the gaze.
+  // Recentering: the frame at the head, its forward along the gaze.
   ZTrans head = pose(0.3, 1.6, -0.2, 0.5);
   rig.Follow(look_of(ride), head);
-  check("recenter: the frame under the head",
-        dist(apply(rig.RefFromWorld(), ride_pos), ZPoint(0.3, 0, -0.2)));
+  check("recenter: the frame at the head",
+        dist(apply(rig.RefFromWorld(), ride_pos), ZPoint(0.3, 1.6, -0.2)));
   ZPoint fwd = rotate(rig.RefFromWorld(), ZPoint(ride.CM(0, 0), ride.CM(1, 0), ride.CM(2, 0)));
   fwd.y = 0;
   fwd.Normalize();
   check("recenter: forward along the gaze", dist(fwd, ZPoint(-std::sin(0.5), 0, -std::cos(0.5))));
   check("recenter: the scale", std::abs(rig.Scale() - 0.2));
 
-  // A turn in place, with the head moved away from the frame: the head stays
-  // over the same world point.
+  // The ridden frame turns and moves, with the head stepped away from it:
+  // the head keeps its place in the frame.
   head = pose(0.6, 1.5, 0.1, 0.5);
-  ZTrans inv = rig.RefFromWorld();
-  inv.Invert();
-  const ZPoint under_head = apply(inv, ZPoint(0.6, 1.5, 0.1));
+  auto in_ride = [&](const ZPoint& p) {
+    ZTrans inv = rig.RefFromWorld();
+    inv.Invert();
+    ZTrans r(ride);
+    r.Invert();
+    return apply(r, apply(inv, p));
+  };
+  const ZPoint head_in_ride = in_ride(ZPoint(0.6, 1.5, 0.1));
   for (int i = 0; i < 10; ++i)
   {
     ride.RotateLF(1, 2, 0.05);
+    ride.MoveLF(1, 0.3);
     rig.Follow(look_of(ride), head);
   }
-  ZPoint h = apply(rig.RefFromWorld(), under_head);
-  check("turn: the head stays over its world point", std::hypot(h.x - 0.6, h.z - 0.1));
+  check("ride: the head keeps its place in the turning frame",
+        dist(in_ride(ZPoint(0.6, 1.5, 0.1)), head_in_ride));
 
   // One hand carries the scene rigidly and keeps it level.
   const ZTrans h1 = pose(0.2, 1.2, -0.4, 0.1), h2 = pose(0.35, 1.3, -0.3, 0.4);
   const ZTrans* hands[2] = { &h1, 0 };
   rig.Grab(hands);
-  inv = rig.RefFromWorld();
+  ZTrans inv = rig.RefFromWorld();
   inv.Invert();
   const ZPoint under_hand = apply(inv, ZPoint(0.2, 1.2, -0.4));
   hands[0] = &h2;
@@ -105,6 +111,60 @@ void xr_rig()
   two[0] = &l2; two[1] = &r2;
   rig.Grab(two);
   check("two hands: twice the distance, twice the scale", std::abs(rig.Scale() - 2 * s0));
+  const ZTrans* none[2] = { 0, 0 };
+  rig.Grab(none);
+
+  // Flying with the gaze pitched down stays level.
+  ZTrans down = pose(0.6, 1.5, 0.1, 0.5);
+  down.RotateLF(2, 3, -0.6);
+  const ZPoint far(30, -20, 7);
+  const Double_t y0 = apply(rig.RefFromWorld(), far).y;
+  const Float_t push[4] = { 0.3f, 1, 0, 0 };
+  for (int i = 0; i < 30; ++i) rig.Fly(down, push, 0.02);
+  check("fly: level, no change in height", std::abs(apply(rig.RefFromWorld(), far).y - y0));
+
+  // Realigning keeps the head's world point and the scale, and faces the
+  // ridden frame along the gaze.
+  head = pose(0.1, 1.6, 0.4, -1.1);
+  rig.Follow(look_of(ride), head);
+  inv = rig.RefFromWorld();
+  inv.Invert();
+  const ZPoint under_head2 = apply(inv, ZPoint(0.1, 1.6, 0.4));
+  const Double_t s1 = rig.Scale();
+  rig.Realign();
+  rig.Follow(look_of(ride), head);
+  const ZPoint h = apply(rig.RefFromWorld(), under_head2);
+  check("realign: the head stays over its world point", std::hypot(h.x - 0.1, h.z - 0.4));
+  check("realign: the scale", std::abs(rig.Scale() - s1));
+  fwd = rotate(rig.RefFromWorld(), ZPoint(ride.CM(0, 0), ride.CM(1, 0), ride.CM(2, 0)));
+  fwd.y = 0;
+  fwd.Normalize();
+  check("realign: forward along the gaze", dist(fwd, ZPoint(-std::sin(-1.1), 0, -std::cos(-1.1))));
+
+  // A ridden frame that pitches as it moves: riding keeps its up as the
+  // reference space's up; level mode keeps the up of recentering.
+  XrRig ridden(0.2), level(0.2);
+  level.bLevel = true;
+  ZTrans car;
+  car.SetBaseVec(4, ZPoint(3, 1, 0));
+  const ZPoint world_up(0, 0, 1);
+  head = pose(0, 1.6, 0, 0);
+  ridden.Follow(look_of(car), head);
+  level.Follow(look_of(car), head);
+  for (int i = 0; i < 20; ++i)
+  {
+    car.MoveLF(1, 0.1);
+    car.RotateLF(1, 3, 0.03);
+    car.RotateLF(2, 3, 0.02);
+    ridden.Follow(look_of(car), head);
+    level.Follow(look_of(car), head);
+  }
+  up = rotate(ridden.RefFromWorld(), ZPoint(car.CM(0, 2), car.CM(1, 2), car.CM(2, 2)));
+  up.Normalize();
+  check("ride: the frame's up stays up", dist(up, ZPoint(0, 1, 0)));
+  up = rotate(level.RefFromWorld(), world_up);
+  up.Normalize();
+  check("level: the world's up stays up", dist(up, ZPoint(0, 1, 0)));
 
   printf("xr_rig: %s\n", n_failed ? "FAILED" : "all passed");
 }

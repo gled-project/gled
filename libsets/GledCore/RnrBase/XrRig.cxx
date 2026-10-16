@@ -13,6 +13,22 @@ using namespace gled;
 namespace
 {
   ZPoint pos_of(const ZTrans& t) { return ZPoint(t.CM(0, 3), t.CM(1, 3), t.CM(2, 3)); }
+
+  // The rotation taking the unit vector u to +y, about the axis u x y.
+  ZTrans to_up(const ZPoint& u)
+  {
+    ZTrans t;
+    const Double_t a[3] = { -u.z, 0, u.x }, s2 = a[0]*a[0] + a[2]*a[2], c = u.y;
+    if (s2 < 1e-18) return t;
+    const Double_t f = (1 - c) / s2;
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j)
+        t.CM(i, j) = (i == j ? c : 0) + f * a[i] * a[j];
+    t.CM(0, 1) -= a[2]; t.CM(0, 2) += a[1];
+    t.CM(1, 0) += a[2]; t.CM(1, 2) -= a[0];
+    t.CM(2, 0) -= a[1]; t.CM(2, 1) += a[0];
+    return t;
+  }
 }
 
 ZTrans XrRig::Translation(Double_t x, Double_t y, Double_t z)
@@ -35,9 +51,9 @@ Double_t XrRig::YawOf(const ZTrans& t)
 //==============================================================================
 
 XrRig::XrRig(Double_t metres_per_unit) :
-  bLookPrev(false), bRecenter(true),
+  bRecenter(true), bRealign(false),
   fGrabMask(0), fDist0(1), fYaw0(0),
-  fSpeed(0), fFlyAccel(3)
+  fSpeed(0), fFlyAccel(3), bLevel(false)
 {
   fW = fWStart = Scaling(metres_per_unit);
 }
@@ -59,30 +75,43 @@ void XrRig::Recenter()
   fSpeed    = 0;
 }
 
+void XrRig::Realign()
+{
+  bRealign = true;
+  fSpeed   = 0;
+}
+
 void XrRig::Follow(const ZTrans& look, const ZTrans& head)
 {
   const ZPoint h = pos_of(head);
   fLook = look;
   if (bRecenter)
   {
-    fW        = Translation(h.x, 0, h.z) * Yaw(YawOf(head)) * fWStart;
+    fW        = Translation(h.x, h.y, h.z) * Yaw(YawOf(head)) * fWStart;
     fGrabMask = -1;
-    bRecenter = false;
+    bRecenter = bRealign = false;
+    // The ridden frame's up, GL's +y, in world coordinates.
+    ZTrans inv(fLook);
+    inv.Invert();
+    fUp.Set(0, 1, 0);
+    inv.RotateIP(fUp);
+    fUp.Normalize();
   }
-  else if (bLookPrev)
+  else if (bLevel)
   {
-    // A turn of the ridden frame is a turn about its place in the reference
-    // space, the translation of fW; move the pivot to the head: (1 - R)(h - c).
-    // Only the turn about the vertical, so a curved surface's tilts do not add up.
-    ZTrans d = fW * fLook, d0 = fW * fLookPrev;
-    d0.Invert();
-    d = d * d0;
-    const Double_t a  = YawOf(d), ca = std::cos(a), sa = std::sin(a);
-    const Double_t vx = h.x - fW.CM(0, 3), vz = h.z - fW.CM(2, 3);
-    fW = Translation(vx - (ca*vx + sa*vz), 0, vz - (-sa*vx + ca*vz)) * fW;
+    // Undo the tilt about the ridden frame's place: the up of recentering stays up.
+    ZPoint u(fUp), c = pos_of(fW);
+    (fW * fLook).RotateIP(u);
+    u.Normalize();
+    fW = Translation(c.x, c.y, c.z) * to_up(u) * Translation(-c.x, -c.y, -c.z) * fW;
   }
-  fLookPrev = fLook;
-  bLookPrev = true;
+  if (bRealign)
+  {
+    const Double_t a = YawOf(head) - YawOf(fW);
+    fW        = Translation(h.x, 0, h.z) * Yaw(a) * Translation(-h.x, 0, -h.z) * fW;
+    fGrabMask = -1;
+    bRealign  = false;
+  }
 }
 
 bool XrRig::Grab(const ZTrans* hands[2])
@@ -142,15 +171,15 @@ void XrRig::Fly(const ZTrans& head, const Float_t stick[4], Double_t dt)
   else
     fSpeed *= std::exp(-dt / 0.4);
 
-  // The world moves against the head: back along the gaze, -z.
+  // The world moves against the head, along the gaze and sideways, both kept
+  // level; up and down only by the right stick.
   const Double_t f = fSpeed * dt, s = 2 * stick[0] * dt, u = 2 * stick[3] * dt;
-  ZTrans move = Translation(f * head.CM(0, 2) - s * head.CM(0, 0),
-                            f * head.CM(1, 2) - s * head.CM(1, 0) + u,
-                            f * head.CM(2, 2) - s * head.CM(2, 0));
+  const Double_t a = YawOf(head), sa = std::sin(a), ca = std::cos(a);
+  ZTrans move = Translation(f * sa - s * ca, u, f * ca + s * sa);
   if (std::abs(stick[2]) > 0.15)
   {
     const ZPoint h = pos_of(head);
-    move = Translation(h.x, h.y, h.z) * Yaw(-stick[2] * dt) * Translation(-h.x, -h.y, -h.z) * move;
+    move = Translation(h.x, h.y, h.z) * Yaw(stick[2] * dt) * Translation(-h.x, -h.y, -h.z) * move;
   }
   fW = move * fW;
 }

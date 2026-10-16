@@ -138,10 +138,13 @@ GLED_RNR_CHECK=1 timeout 22 gled --noprompt 'tringula.C(2,300)' \
 culling of every demo it runs.
 
 **`xr_rig.C`** checks `XrRig`, the placement of a scene in a headset's space,
-without a headset: recentering puts the ridden frame under the head, facing
-the gaze; a turn in place keeps the head over the same world point; one hand
-carries the scene rigidly and keeps it level; two hands scale it by their
-distance. It must print `xr_rig: all passed`:
+without a headset: recentering puts the ridden frame at the head, facing the
+gaze; the head keeps its place in a ridden frame that turns and moves; one
+hand carries the scene rigidly and keeps it level; two hands scale it by their
+distance; flying keeps the height; realigning keeps the place and the scale
+and turns the ridden frame to the gaze; a ridden frame that pitches and rolls
+keeps its up as the headset's up, and in level mode keeps the world's up. It
+must print `xr_rig: all passed`:
 
 ```sh
 cd $GLEDSYS/demos/GledCore

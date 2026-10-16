@@ -10,14 +10,16 @@
 namespace gled {
 
 // The placement of a gled scene in a headset's reference space (metres, +y up),
-// and the interactions that change it: recentering, turns pivoting at the
-// head, grabbing with one or two hands, and flying. No OpenXR and no GL, so
-// test/regress/xr_rig.C can check it without a headset.
+// and the interactions that change it: recentering, realigning, grabbing with
+// one or two hands, and flying. Otherwise the head keeps its place in the
+// ridden frame. No OpenXR and no GL, so test/regress/xr_rig.C can check it
+// without a headset.
 class XrRig
 {
   ZTrans    fW, fWStart;   // Ridden frame's GL eye coordinates, gled units, to metres.
-  ZTrans    fLook, fLookPrev;
-  bool      bLookPrev, bRecenter;
+  ZTrans    fLook;
+  bool      bRecenter, bRealign;
+  ZPoint    fUp;           // The ridden frame's up at recentering, in world coordinates.
 
   Int_t     fGrabMask;     // Hands holding: 1 left, 2 right; -1 to re-anchor.
   ZTrans    fW0;           // fW when the hands took hold,
@@ -28,6 +30,7 @@ class XrRig
 
 public:
   Double_t  fFlyAccel;     // Of a fully pushed stick, in metres per second squared.
+  bool      bLevel;        // Undo the ridden frame's tilts: keep its up of recentering up.
 
   XrRig(Double_t metres_per_unit=0.2);
 
@@ -35,16 +38,19 @@ public:
   // frame from gled's world; head: the head's pose in the reference space.
   void Follow(const ZTrans& look, const ZTrans& head);
 
-  // At the next Follow: the ridden frame under the head, facing the gaze.
+  // At the next Follow: the ridden frame at the head, facing the gaze.
   void Recenter();
+  // At the next Follow: turn the scene about the head so the ridden frame
+  // faces the gaze; keeps the place and the scale.
+  void Realign();
 
   // Hands that hold, in the reference space, 0 for one that does not.
   // Returns whether any holds.
   bool Grab(const ZTrans* hands[2]);
 
   // For scenes without a spirit to move the camera. Sticks: left x, y, right
-  // x, y. Left y speeds up along the gaze, left x strafes, right x turns,
-  // right y goes down when pushed.
+  // x, y. Left y speeds up along the gaze, left x strafes, both level; right x
+  // turns, right y goes down when pushed.
   void Fly(const ZTrans& head, const Float_t stick[4], Double_t dt);
 
   // Reference-space coordinates of a point in gled's world.

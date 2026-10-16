@@ -11,11 +11,12 @@ class Pupil;
 
 // An OpenXR session that renders a pupil's scene into a headset, from an
 // FLTK idle callback. Started through PupilInfo::XrStart() or GLED_XR.
-// Controls: the grips move, turn and scale the scene (XrRig), A recenters,
-// the left menu button ends. The sticks go to the pupil's event handler
-// through PupilInfo, or fly. The right hand's laser picks with the trigger
-// and shoots with B, as mouse buttons 1 and 3; on the overlay panel above
-// the left hand, which X shows and hides, it works the overlay's widgets.
+// Controls: the grips move, turn and scale the scene (XrRig). A recenters,
+// or realigns when there is no spirit; held, it recenters. The left menu
+// button ends. The sticks go to the pupil's event handler through PupilInfo,
+// or fly. The right hand's laser picks with the trigger and shoots with B, as
+// mouse buttons 1 and 3; on the overlay panel above the left hand, which X
+// shows and hides, it works the overlay's widgets.
 // The pupil's window mirrors the left eye, unless GLED_XR_DESKTOP is set.
 class PupilXr
 {

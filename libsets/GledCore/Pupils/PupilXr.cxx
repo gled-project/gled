@@ -114,7 +114,7 @@ struct PupilXr::Input
   bool    bAimValid     = false;
   bool    bTrigger      = false, bTriggerChanged = false;
   bool    bShoot        = false, bShootChanged   = false;
-  bool    bExit         = false, bRecenter = false, bPanelToggle = false;
+  bool    bExit         = false, bRecenter = false, bHome = false, bPanelToggle = false;
 };
 
 struct PupilXr::Impl
@@ -160,6 +160,7 @@ struct PupilXr::Impl
   XrSpace         fAimSpace     = XR_NULL_HANDLE;
   bool            bGrabPrev[2]  = { false, false };
   bool            bTriggerPrev  = false;
+  XrTime          fADown        = 0;     // When A went down, 0 once its press is used.
 
   // The placement, the ridden frame's view and the camera base, the head.
   XrRig           fRig;
@@ -289,6 +290,7 @@ PupilXr::PupilXr(Pupil* pupil) : m(new Impl)
   for (auto &v : m->fViews) v = { XR_TYPE_VIEW };
   if (const char* s = getenv("GLED_XR_SCALE")) m->fRig = XrRig(atof(s));
   if (const char* s = getenv("GLED_XR_FLY"))   m->fRig.fFlyAccel = atof(s);
+  if (const char* s = getenv("GLED_XR_LEVEL")) m->fRig.bLevel    = atoi(s) != 0;
   m->bMirror = getenv("GLED_XR_DESKTOP") == 0;
 }
 
@@ -549,7 +551,17 @@ void PupilXr::read_input(Input& in, long long t)
 
   in.bExit        = M.pressed(M.fExitAct,  0);
   in.bPanelToggle = M.pressed(M.fPanelAct, 0);
-  in.bRecenter    = M.pressed(M.fRecenter, 1);
+
+  // A: a press shorter than 0.6 s on release, or a long one when it reaches 0.6 s.
+  {
+    XrActionStateGetInfo gi = M.get_info(M.fRecenter, 1);
+    XrActionStateBoolean a { XR_TYPE_ACTION_STATE_BOOLEAN };
+    xrGetActionStateBoolean(M.fSession, &gi, &a);
+    const bool down = a.isActive && a.currentState;
+    if (down && a.changedSinceLastSync) M.fADown = t;
+    if (down && M.fADown && t - M.fADown > 600000000) { in.bHome = true; M.fADown = 0; }
+    if ( ! down && a.changedSinceLastSync && M.fADown) { in.bRecenter = true; M.fADown = 0; }
+  }
 
   for (int h = 0; h < 2; ++h)
   {
@@ -597,13 +609,17 @@ void PupilXr::act(const Input& in, double dt)
   }
 
   if (in.bExit)        xrRequestExitSession(M.fSession);
-  if (in.bRecenter)    M.fRig.Recenter();
+  // A held recenters. A short press recenters when a spirit moves the camera,
+  // and otherwise only realigns, keeping where flying and grabbing put the scene.
+  const bool spirit = P.mEventHandlerImg && P.bUseEventHandler;
+  if (in.bHome || (in.bRecenter && spirit)) M.fRig.Recenter();
+  else if (in.bRecenter)                    M.fRig.Realign();
   if (in.bPanelToggle) M.bPanelOn = ! M.bPanelOn;
 
   const ZTrans* hands[2] = { in.bGrab[0] ? &in.fGrip[0] : 0, in.bGrab[1] ? &in.fGrip[1] : 0 };
   const bool holding = M.fRig.Grab(hands);
 
-  if (P.mEventHandlerImg && P.bUseEventHandler)
+  if (spirit)
   {
     // The pupil's spirit reads the sticks and moves the camera, which the headset rides.
     PupilInfo &PI = *P.mInfo;
