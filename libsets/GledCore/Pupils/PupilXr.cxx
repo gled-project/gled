@@ -5,6 +5,7 @@
 #include "PupilXr.h"
 #include "Pupil.h"
 #include <Glasses/PupilInfo.h>
+#include <Glasses/Camera.h>
 #include <Stones/ZTrans.h>
 #include <Rnr/GL/GLRnrDriver.h>
 #include <Gled/GTime.h>
@@ -28,6 +29,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <vector>
 #include <unistd.h>
 
@@ -89,10 +91,16 @@ struct PupilXr::Impl
   XrSpace         fSpace    = XR_NULL_HANDLE;
   bool            bRunning  = false;
   bool            bExit     = false;
+  GLXDrawable     fDrawable = 0;
   Eye             fEyes[2];
   XrView          fViews[2];
   Long64_t        fFrames   = 0;
   GTime           fRateStart;
+  // Per frame: waiting in xrWaitFrame, rendering and submitting, and the time
+  // between frames, when FLTK runs the desktop pupil and the Eye.
+  GTime           fFrameEnd;
+  Double_t        fWaitSum = 0, fWorkSum = 0, fGapSum = 0;
+  XrDuration      fPeriod = 0;
 
   // Controllers, left and right.
   XrActionSet     fActionSet = XR_NULL_HANDLE;
@@ -119,7 +127,16 @@ struct PupilXr::Impl
   ZTrans          fAim;
   bool            bAimValid = false, bSelectDown = false;
   // The camera's view and the camera base of the last frame, for the laser's ray.
-  ZTrans          fLook, fBase;
+  ZTrans          fLook, fBase, fLookPrev;
+  bool            bLookPrev = false;
+  // Recenter at the next frame: the camera under the head, facing the gaze.
+  bool            bAlign = true;
+
+  ZPoint head_pos() const
+  {
+    const XrVector3f &a = fViews[0].pose.position, &b = fViews[1].pose.position;
+    return ZPoint((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  }
 
   bool ok(XrResult r, const char* what)
   {
@@ -188,6 +205,7 @@ PupilXr::~PupilXr()
 {
   Fl::remove_idle(IdleCallback, this);
   m->fPupil->make_current();
+  if (m->fDrawable) glXSwapIntervalEXT(fl_display, m->fDrawable, 1);
   for (auto &e : m->fEyes)
   {
     if (e.fFBO)   glDeleteFramebuffers(1, &e.fFBO);
@@ -238,6 +256,14 @@ bool PupilXr::Init()
   GLXFBConfig  cfg  = n_cfg > 0 ? cfgs[0] : 0;
   if (cfg) glXGetFBConfigAttrib(dpy, cfg, GLX_VISUAL_ID, &vis_id);
   if (cfgs) XFree(cfgs);
+
+  // The desktop window's vsync would hold the headset to the monitor's rate:
+  // the next GL call after a swap, a headset render, waits for the blank.
+  if (GLXEW_EXT_swap_control)
+  {
+    glXSwapIntervalEXT(dpy, drw, 0);
+    M.fDrawable = drw;
+  }
 
   XrGraphicsBindingOpenGLXlibKHR gb { XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR };
   gb.xDisplay    = dpy;
@@ -467,7 +493,7 @@ void PupilXr::update_input(long long display_time)
   xrGetActionStateBoolean(M.fSession, &gi, &reset);
   if (reset.isActive && reset.changedSinceLastSync && reset.currentState)
   {
-    M.fW        = M.fWStart;
+    M.bAlign    = true;
     M.fSpeed    = 0;
     M.fGrabMask = -1; // Re-anchor any hand still holding.
   }
@@ -641,7 +667,6 @@ void PupilXr::render_eye(int e)
   // scene's placement, then the pupil's camera.
   ZTrans view = pose_to_trans(M.fViews[e].pose);
   view.Invert();
-  ZTrans mv = view * M.fW;
   glMatrixMode(GL_MODELVIEW);
   try
   {
@@ -651,20 +676,74 @@ void PupilXr::render_eye(int e)
   {
     printf("PupilXr: camera setup failed: %s.\n", exc.Data());
   }
-  // Ride the camera: its position and heading, with the camera base's z as up,
-  // so a spirit that keeps the base on a surface keeps the headset level on it.
+  // Ride the camera base, skipping camera nodes, which pitch and orbit: its
+  // frame, raised to the camera's height above it. A spirit that keeps its
+  // base on a surface then keeps the headset level on it, and the headset's
+  // forward is the base's. Without a base: the camera, levelled to +z.
   const ZTrans &cam = P.mCamAbsTrans, &base = P.mCamBaseTrans;
-  ZPoint up(base.CM(0, 2), base.CM(1, 2), base.CM(2, 2));
-  up.Normalize();
-  ZPoint fwd(cam.CM(0, 0), cam.CM(1, 0), cam.CM(2, 0));
-  fwd -= up * fwd.Dot(up);
-  if (fwd.Mag2() < 1e-12) fwd = up.Orthogonal();
-  fwd.Normalize();
-  const Double_t *pos = cam.ArrT();
-  glLoadIdentity();
-  gluLookAt(pos[0], pos[1], pos[2], pos[0] + fwd.x, pos[1] + fwd.y, pos[2] + fwd.z, up.x, up.y, up.z);
-  glGetDoublev(GL_MODELVIEW_MATRIX, M.fLook.Array());
+  ZNode *bn;
+  {
+    GLensReadHolder _lck(P.mInfo);
+    bn = P.mInfo->GetCameraBase();
+  }
+  while (bn && dynamic_cast<Camera*>(bn))
+  {
+    GLensReadHolder _lck(bn);
+    bn = bn->GetParent();
+  }
+  std::unique_ptr<ZTrans> nt(bn ? P.mInfo->ToPupilFrame(bn) : 0);
+  ZTrans b;
+  if (nt)
+  {
+    b = *nt;
+    Double_t h = 0;
+    for (int i = 0; i < 3; ++i) h += (cam.CM(i, 3) - b.CM(i, 3)) * b.CM(i, 2);
+    for (int i = 0; i < 3; ++i) b.CM(i, 3) += h * b.CM(i, 2);
+  }
+  else
+  {
+    ZPoint fwd(cam.CM(0, 0), cam.CM(1, 0), 0);
+    if (fwd.Mag2() < 1e-12) fwd.Set(1, 0, 0);
+    fwd.Normalize();
+    b.SetBaseVec(1, fwd);
+    b.SetBaseVec(2, ZPoint(-fwd.y, fwd.x, 0));
+    b.SetBaseVec(3, ZPoint(0, 0, 1));
+    b.SetBaseVec(4, ZPoint(cam.CM(0, 3), cam.CM(1, 3), cam.CM(2, 3)));
+  }
+  b.Invert();
+  // Gled's frame (x forward, y left, z up) to GL's eye axes (x right, y up, -z forward).
+  ZTrans axes;
+  axes.CM(0, 0) = 0; axes.CM(0, 1) = -1;
+  axes.CM(1, 1) = 0; axes.CM(1, 2) =  1;
+  axes.CM(2, 2) = 0; axes.CM(2, 0) = -1;
+  M.fLook = axes * b;
   M.fBase = base;
+
+  if (e == 0)
+  {
+    const ZPoint h = M.head_pos();
+    if (M.bAlign)
+    {
+      // The camera under the head, its forward along the gaze, the start's scale.
+      M.fW = translation(h.x, 0, h.z) * yaw(yaw_of(pose_to_trans(M.fViews[0].pose))) * M.fWStart;
+      M.bAlign = false;
+    }
+    else if (M.bLookPrev)
+    {
+      // A turn of the base is a turn about the camera's place in the reference
+      // space, the translation of fW; move its pivot to the head: (1 - R)(h - c).
+      // Only the turn about the vertical, so a curved surface's tilts do not add up.
+      ZTrans d  = M.fW * M.fLook, d0 = M.fW * M.fLookPrev;
+      d0.Invert();
+      d = d * d0;
+      const Double_t a  = yaw_of(d), ca = std::cos(a), sa = std::sin(a);
+      const Double_t vx = h.x - M.fW.CM(0, 3), vz = h.z - M.fW.CM(2, 3);
+      M.fW = translation(vx - (ca*vx + sa*vz), 0, vz - (-sa*vx + ca*vz)) * M.fW;
+    }
+    M.fLookPrev = M.fLook;
+    M.bLookPrev = true;
+  }
+  ZTrans mv = view * M.fW;
   glLoadMatrixd(mv.Array());
   glMultMatrixd(M.fLook.Array());
 
@@ -718,11 +797,17 @@ void PupilXr::frame()
     return;
   }
 
+  const GTime t0 = GTime::Now();
+  if (M.fFrames > 0) M.fGapSum += (t0 - M.fFrameEnd).ToDouble();
+
   M.fPupil->make_current();
 
   XrFrameWaitInfo wi { XR_TYPE_FRAME_WAIT_INFO };
   XrFrameState    fs { XR_TYPE_FRAME_STATE };
   if ( ! M.ok(xrWaitFrame(M.fSession, &wi, &fs), "xrWaitFrame")) return;
+  const GTime t1 = GTime::Now();
+  M.fWaitSum += (t1 - t0).ToDouble();
+  M.fPeriod   = fs.predictedDisplayPeriod;
   XrFrameBeginInfo bi { XR_TYPE_FRAME_BEGIN_INFO };
   if ( ! M.ok(xrBeginFrame(M.fSession, &bi), "xrBeginFrame")) return;
 
@@ -771,13 +856,18 @@ void PupilXr::frame()
   ei.layerCount           = n_layers;
   ei.layers               = layers;
   M.ok(xrEndFrame(M.fSession, &ei), "xrEndFrame");
+  M.fFrameEnd = GTime::Now();
+  M.fWorkSum += (M.fFrameEnd - t1).ToDouble();
   if (M.fFrames++ % 600 == 0)
   {
-    GTime now = GTime::Now();
     if (M.fFrames > 1)
-      printf("PupilXr: %.1f frames per second.\n", 600 / (now - M.fRateStart).ToDouble());
+      printf("PupilXr: %.1f frames per second, display period %.2f ms; per frame: "
+             "wait %.2f ms, render %.2f ms, between frames %.2f ms.\n",
+             600 / (M.fFrameEnd - M.fRateStart).ToDouble(), 1e-6 * M.fPeriod,
+             1e3 * M.fWaitSum / 600, 1e3 * M.fWorkSum / 600, 1e3 * M.fGapSum / 600);
     fflush(stdout);
-    M.fRateStart = now;
+    M.fRateStart = M.fFrameEnd;
+    M.fWaitSum   = M.fWorkSum = M.fGapSum = 0;
   }
 }
 

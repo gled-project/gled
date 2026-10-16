@@ -4,6 +4,9 @@
 
 #include "TringuObserverSpiritio_GL_Rnr.h"
 #include <Glasses/TringuCam.h>
+#include <Glasses/Extendio.h>
+#include <Eye/Eye.h>
+#include <Stones/ZMIR.h>
 #include <Rnr/GL/GLRnrDriver.h>
 #include <RnrBase/Fl_Event_Enums.h>
 
@@ -54,7 +57,13 @@ int TringuObserverSpiritio_GL_Rnr::Handle(RnrDriver* rd, Fl_Event& ev)
       }
       else if (ev.fButton == 3)
       {
-        TC.MouseShoot();
+        // Explode what is under the mouse; the Eye sends MIRs, as menu buttons do.
+        Extendio *ext = TC.PickUnderMouse();
+        if (ext)
+        {
+          std::unique_ptr<ZMIR> mir(TC.S_ExtendioExplode(ext));
+          fImg->fEye->Send(*mir);
+        }
       }
 
       return 1;

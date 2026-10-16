@@ -283,10 +283,7 @@ void TringuCam::MouseDown(A_Rnr::Fl_Event& ev)
     }
     case MA_PickExtendios:
     {
-      CalculateMouseRayVectors();
-      Opcode::Ray ray(&mMouseRayPos[0], &mMouseRayDir[0]);
-      Float_t rng = mTringula->RayCollideClosestHit(ray, true);
-      Extendio *ext = mTringula->PickExtendios(ray, rng);
+      Extendio *ext = PickUnderMouse();
 
       if (bMouseVerbose)
         printf("TringuCam::MouseDown picked %s, state=0x%x\n",
@@ -345,16 +342,14 @@ void TringuCam::MouseDown(A_Rnr::Fl_Event& ev)
   }
 }
 
-void TringuCam::MouseShoot()
+Extendio* TringuCam::PickUnderMouse()
 {
-  // Explodes the Extendio under the mouse ray.
+  // The closest Extendio under the mouse ray, not behind the terrain.
 
   CalculateMouseRayVectors();
   Opcode::Ray ray(&mMouseRayPos[0], &mMouseRayDir[0]);
   Float_t rng = mTringula->RayCollideClosestHit(ray, true);
-  Extendio *ext = mTringula->PickExtendios(ray, rng);
-  if (ext)
-    mSaturn->ShootMIR(S_ExtendioExplode(ext));
+  return mTringula->PickExtendios(ray, rng);
 }
 
 void TringuCam::MouseUp()
@@ -448,7 +443,11 @@ void TringuCam::TimeTick(Double_t t, Double_t dt)
   mUpDown.TimeTick(dt);
   if (mUpDown.fValue) mHeight += dt*mUpDown.fValue;
   if (mHeight > mTringula->GetMaxCameraH())
+  {
+    // Stop the climb too, so that going down takes effect at once.
     mHeight = mTringula->GetMaxCameraH();
+    if (mUpDown.fValue > 0) mUpDown.fValue = 0;
+  }
 
   mSpinUp.TimeTick(dt);
   if (mSpinUp.fValue) RotateLF(1, 2, dt*mSpinUp.fValue);

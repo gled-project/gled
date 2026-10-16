@@ -216,7 +216,7 @@ public:
 
   void MouseDown(A_Rnr::Fl_Event& ev);
   void MouseUp();
-  void MouseShoot();
+  Extendio* PickUnderMouse();
 
   void CalculateMouseRayVectors();
   void MouseRayCollide();

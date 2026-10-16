@@ -1079,6 +1079,15 @@ void Pupil::draw()
   }
   bXrStartPending = false;
 
+  // For measuring: with GLED_XR_NO_DESKTOP, the headset alone renders the scene.
+  static bool s_xr_no_desktop = getenv("GLED_XR_NO_DESKTOP") != 0;
+  if (mXr && s_xr_no_desktop)
+  {
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    return;
+  }
+
   if (bDumpImage)
   {
     try {
