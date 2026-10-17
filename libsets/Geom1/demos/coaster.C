@@ -1,6 +1,6 @@
 // A roller coaster to ride in a headset: a closed track with a chain lift, a
-// drop, a vertical loop, a banked turn and a helix, under a sky, over tropical
-// hills with water-filled craters.
+// drop, a vertical loop, a banked turn and a helix, under a sky, in a tropical
+// saddle between hills, with crater lakes, a sea in the valleys, and shadows.
 //
 // The track's centre line is a centripetal Catmull-Rom spline through key
 // points, resampled into WSPoints about 2 m apart. Each segment takes the
@@ -145,29 +145,65 @@ namespace
   }
 
   struct Crater { Double_t x, y, r, depth; };
+  const Crater coaster_craters[] = {
+    { 20, 112, 22, 10 }, { 115, 118, 18, 9 }, { -35, -85, 25, 10 },
+    { 145, -72, 20, 9 }, { -85, 75, 16, 8 }
+  };
+  const Double_t coaster_sea = -6;
 
-  // Ground height in metres: rolling hills, mountains towards the edges, and
-  // craters whose floors below the water level fill with water; flattened
-  // to at most 0.5 m near the track.
-  Double_t coaster_ground(Double_t x, Double_t y, Double_t d_track, Double_t water)
+  // Ground height in metres before the track: a saddle with hills across the
+  // track and valleys along it, bumps, and the craters' bowls and rims.
+  Double_t coaster_land(Double_t x, Double_t y)
   {
-    static const Crater craters[] = {
-      { -60, 60, 25, 9 }, { 20, 92, 18, 8 }, { 150, 98, 30, 10 },
-      { 200, -40, 22, 8 }, { -40, -60, 20, 8 }, { 90, -52, 16, 7 }
-    };
-    Double_t h = 4 + 3 * std::sin(x / 37) * std::cos(y / 29) + 2 * std::sin((x + y) / 23);
-    const Double_t rc = std::hypot(x - 60, y - 20);
-    if (rc > 130) h += 14 * TMath::Min(1.0, (rc - 130) / 60);
-    for (const Crater& c : craters)
+    const Double_t u = (x - 60) / 180, v = (y - 20) / 140;
+    Double_t h = 40 * v * v - 18 * u * u + 6 * std::sin(x / 41) * std::cos(y / 33)
+               + 4 * std::sin((x + 2 * y) / 57) + 2.5 * std::sin(x / 13 + y / 17);
+    for (const Crater& c : coaster_craters)
     {
       const Double_t r = std::hypot(x - c.x, y - c.y) / c.r;
       if (r < 1) h -= c.depth * (1 - r * r);
-      h += 1.5 * std::exp(-std::pow((r - 1) / 0.25, 2));
+      h += 2 * std::exp(-std::pow((r - 1) / 0.25, 2));
     }
-    h = TMath::Max(h, water);
-    const Double_t f = TMath::Min(1.0, TMath::Max(0.0, (d_track - 6) / 20));
-    return f * h + (1 - f) * TMath::Min(h, 0.5);
+    return h;
   }
+
+  // The ground: the land above the sea, kept between 0 and 0.5 m near the track.
+  Double_t coaster_ground(Double_t x, Double_t y, Double_t d_track)
+  {
+    const Double_t h = TMath::Max(coaster_land(x, y), coaster_sea);
+    const Double_t f = TMath::Min(1.0, TMath::Max(0.0, (d_track - 6) / 20));
+    return f * h + (1 - f) * TMath::Min(TMath::Max(h, 0.0), 0.5);
+  }
+
+  // A crater's lake: half a metre below the lowest point of its rim, if its
+  // floor is lower; -1e9 if it holds none.
+  Double_t coaster_lake(const Crater& c)
+  {
+    Double_t rim = 1e9;
+    for (int k = 0; k < 64; ++k)
+    {
+      const Double_t phi = k * TMath::TwoPi() / 64;
+      rim = TMath::Min(rim, coaster_land(c.x + 1.1 * c.r * std::cos(phi), c.y + 1.1 * c.r * std::sin(phi)));
+    }
+    const Double_t level = rim - 0.5;
+    return coaster_land(c.x, c.y) < level ? level : -1e9;
+  }
+
+  // Heights in metres on a square grid, bilinear.
+  struct HeightGrid
+  {
+    Double_t x0, y0, dc; int nc; std::vector<Double_t> h;
+    Double_t at(Double_t x, Double_t y) const
+    {
+      const Double_t fx = TMath::Max(0.0, TMath::Min(nc - 1.001, (x - x0) / dc));
+      const Double_t fy = TMath::Max(0.0, TMath::Min(nc - 1.001, (y - y0) / dc));
+      const int ix = int(fx), iy = int(fy);
+      const Double_t ax = fx - ix, ay = fy - iy;
+      const Double_t* r0 = &h[iy * nc + ix];
+      const Double_t* r1 = r0 + nc;
+      return (1 - ay) * ((1 - ax) * r0[0] + ax * r0[1]) + ay * ((1 - ax) * r1[0] + ax * r1[1]);
+    }
+  };
 
   WSSeed* rail_seed(ZNode* parent, const char* name, Float_t radius, const ZColor& col)
   {
@@ -207,8 +243,12 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   g_scene = scene;
 
   // Light, sky and ground.
+  // A low sun from the south-west, for long shadows.
+  const Double_t sun_el = 35 * TMath::DegToRad(), sun_az = 220 * TMath::DegToRad();
+  const ZPoint sun_dir(std::cos(sun_el) * std::cos(sun_az), std::cos(sun_el) * std::sin(sun_az),
+                       std::sin(sun_el));
   CREATE_ADD_GLASS(sun, Lamp, scene, "Sun", 0);
-  sun->SetPos(60*m, -100*m, 300*m);
+  sun->SetPos((60 + 2000 * sun_dir.x)*m, (20 + 2000 * sun_dir.y)*m, 2000 * sun_dir.z * m);
   sun->SetDiffuse(1, 0.95, 0.85);
   sun->SetAmbient(0.35, 0.35, 0.4);
   sun->SetLampScale(0);
@@ -238,30 +278,6 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   // The track: the centre line the cart rides, hidden, and what is drawn.
   std::vector<TrackPoint> tp = coaster_track(2, g);
   const int n = tp.size();
-
-  // The ground, 400 m square in cells of 2 m, coloured by height.
-  CREATE_ADD_GLASS(palette, RGBAPalette, scene, "Tropical", 0);
-  palette->SetMarksFromPOVFile("coaster_tropical.pov");
-  {
-    const int    nc = 201;
-    const Double_t x0 = 60 - 200, y0 = 20 - 200, dc = 2, water = -2;
-    std::vector<Float_t> hf(nc * nc);
-    for (int iy = 0; iy < nc; ++iy)
-      for (int ix = 0; ix < nc; ++ix)
-      {
-        const Double_t x = x0 + ix * dc, y = y0 + iy * dc;
-        Double_t d2 = 1e12;
-        for (const TrackPoint& p : tp)
-          d2 = TMath::Min(d2, (p.pos.x - x) * (p.pos.x - x) + (p.pos.y - y) * (p.pos.y - y));
-        hf[iy * nc + ix] = coaster_ground(x, y, std::sqrt(d2), water) * m;
-      }
-    CREATE_ADD_GLASS(ground, RectTerrain, scene, "Ground", 0);
-    ground->SetFromArray(nc, nc, &hf[0]);
-    ground->SetDx(dc*m); ground->SetDy(dc*m);
-    ground->SetPos(x0*m, y0*m, 0);
-    ground->SetRibbon(palette);
-    ground->SetRnrMode(RectTerrain::RM_SmoothTring);
-  }
 
   CREATE_ADD_GLASS(line, WSSeed, scene, "CentreLine", 0);
   line->SetRnrSelf(false);
@@ -350,6 +366,131 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     }
   }
 
+  // The ground, 400 m square in cells of 2 m, coloured by height, with a
+  // light map of the hills' own shadows and those of the track and pillars.
+  {
+    HeightGrid hg;
+    hg.nc = 201; hg.dc = 2; hg.x0 = 60 - 200; hg.y0 = 20 - 200;
+    const int nc = hg.nc;
+    hg.h.resize(nc * nc);
+    for (int iy = 0; iy < nc; ++iy)
+      for (int ix = 0; ix < nc; ++ix)
+      {
+        const Double_t x = hg.x0 + ix * hg.dc, y = hg.y0 + iy * hg.dc;
+        Double_t d2 = 1e12;
+        for (const TrackPoint& p : tp)
+          d2 = TMath::Min(d2, (p.pos.x - x) * (p.pos.x - x) + (p.pos.y - y) * (p.pos.y - y));
+        hg.h[iy * nc + ix] = coaster_ground(x, y, std::sqrt(d2));
+      }
+    Double_t h_min = 1e9, h_max = -1e9;
+    std::vector<Float_t> hf(nc * nc);
+    for (int i = 0; i < nc * nc; ++i)
+    {
+      hf[i] = hg.h[i] * m;
+      h_min = TMath::Min(h_min, hg.h[i]); h_max = TMath::Max(h_max, hg.h[i]);
+    }
+
+    // The palette in metres, mapped onto the terrain's range.
+    struct Band { Double_t h, r, g, b; };
+    const Band bands[] = {
+      { -6, 0.00, 0.35, 0.55 }, { -5, 0.10, 0.75, 0.80 }, { -4.5, 0.93, 0.86, 0.60 },
+      { -0.5, 0.90, 0.82, 0.55 }, { 0.3, 0.35, 0.75, 0.20 }, { 12, 0.10, 0.50, 0.15 },
+      { 30, 0.08, 0.35, 0.12 }, { 45, 0.40, 0.30, 0.20 }, { 60, 0.55, 0.50, 0.45 },
+      { 75, 0.92, 0.92, 0.95 }
+    };
+    const TString pov = GForm("%s/coaster_palette_%d.pov", gSystem->TempDirectory(), gSystem->GetPid());
+    FILE* fp = fopen(pov.Data(), "w");
+    fprintf(fp, "color_map {\n");
+    for (const Band& b : bands)
+      fprintf(fp, "  [%f color rgbt <%f, %f, %f, 0>]\n",
+              TMath::Max(0.0, TMath::Min(1.0, (b.h - h_min) / (h_max - h_min))), b.r, b.g, b.b);
+    fprintf(fp, "}\n");
+    fclose(fp);
+    CREATE_ADD_GLASS(palette, RGBAPalette, scene, "Tropical", 0);
+    palette->SetMarksFromPOVFile(pov.Data());
+    gSystem->Unlink(pov.Data());
+
+    // The light map, 1024 texels over 400 m. The hills: a march towards the
+    // sun from each cell. The track and pillars: their points projected
+    // along the sun onto the ground.
+    const int    nl = 1024;
+    const Double_t texel = 400.0 / nl, shade = 0.55;
+    std::vector<Double_t> lit(nc * nc, 1);
+    for (int iy = 0; iy < nc; ++iy)
+      for (int ix = 0; ix < nc; ++ix)
+      {
+        ZPoint q(hg.x0 + ix * hg.dc, hg.y0 + iy * hg.dc, hg.h[iy * nc + ix] + 0.05);
+        for (int k = 0; k < 160 && lit[iy * nc + ix] == 1; ++k)
+        {
+          q += sun_dir * 2.0;
+          if (hg.at(q.x, q.y) > q.z) lit[iy * nc + ix] = shade;
+        }
+      }
+    std::vector<UChar_t> lm(nl * nl);
+    auto texel_of = [&](Double_t x, Double_t y, int& a, int& r) {
+      a = int((x - hg.x0) / texel); r = int((1 - (y - hg.y0) / 400) * nl); };
+    for (int r = 0; r < nl; ++r)
+      for (int a = 0; a < nl; ++a)
+      {
+        const Double_t fx = (a + 0.5) / nl * (nc - 1), fy = (1 - (r + 0.5) / nl) * (nc - 1);
+        const int ix = TMath::Min(nc - 2, int(fx)), iy = TMath::Min(nc - 2, int(fy));
+        const Double_t ax = fx - ix, ay = fy - iy;
+        const Double_t v = (1 - ay) * ((1 - ax) * lit[iy * nc + ix] + ax * lit[iy * nc + ix + 1])
+                         + ay * ((1 - ax) * lit[(iy + 1) * nc + ix] + ax * lit[(iy + 1) * nc + ix + 1]);
+        lm[r * nl + a] = UChar_t(255 * v);
+      }
+    auto stamp = [&](const ZPoint& p, Double_t radius) {
+      Double_t t = 0;
+      for (int k = 0; k < 4; ++k) t = (p.z - hg.at(p.x - t * sun_dir.x, p.y - t * sun_dir.y)) / sun_dir.z;
+      int a0, r0;
+      texel_of(p.x - t * sun_dir.x, p.y - t * sun_dir.y, a0, r0);
+      const int rt = int(radius / texel) + 1;
+      for (int r = r0 - rt; r <= r0 + rt; ++r)
+        for (int a = a0 - rt; a <= a0 + rt; ++a)
+          if (a >= 0 && a < nl && r >= 0 && r < nl && (a - a0) * (a - a0) + (r - r0) * (r - r0) <= rt * rt)
+            lm[r * nl + a] = TMath::Min(lm[r * nl + a], UChar_t(255 * shade));
+    };
+    for (int k = 0; k < n; ++k)
+    {
+      const ZPoint &p = tp[k].pos, &q = tp[(k + 1) % n].pos;
+      for (int j = 0; j < 7; ++j) stamp(p + (q - p) * (j / 7.0), 0.75);
+      if (k % 5 == 0 && p.z > 3 && tp[k].z.z > 0.5)
+        for (Double_t z = 0.5; z < p.z; z += 0.3) stamp(ZPoint(p.x, p.y, z), 0.2);
+    }
+    const TString pgm = GForm("%s/coaster_light_%d.pgm", gSystem->TempDirectory(), gSystem->GetPid());
+    fp = fopen(pgm.Data(), "wb");
+    fprintf(fp, "P5\n%d %d\n255\n", nl, nl);
+    fwrite(&lm[0], 1, nl * nl, fp);
+    fclose(fp);
+    CREATE_ADD_GLASS(light_map, ZImage, scene, "LightMap", 0);
+    light_map->SetFile(pgm.Data());
+    light_map->Load();
+    light_map->SetEnvMode(GL_MODULATE);
+    light_map->SetMagFilter(GL_LINEAR);
+    light_map->SetMinFilter(GL_LINEAR);
+    gSystem->Unlink(pgm.Data());
+
+    CREATE_ADD_GLASS(ground, RectTerrain, scene, "Ground", 0);
+    ground->SetFromArray(nc, nc, &hf[0]);
+    ground->SetDx(hg.dc*m); ground->SetDy(hg.dc*m);
+    ground->SetPos(hg.x0*m, hg.y0*m, 0);
+    ground->SetRibbon(palette);
+    ground->SetTexture(light_map);
+    ground->SetRnrMode(RectTerrain::RM_SmoothTring);
+
+    // The crater lakes, flat discs just below their rims.
+    for (const Crater& c : coaster_craters)
+    {
+      const Double_t level = coaster_lake(c);
+      if (level < -1e8) continue;
+      CREATE_ADD_GLASS(lake, SMorph, scene, "Lake", 0);
+      lake->SetPos(c.x*m, c.y*m, level*m);
+      lake->SetScales(1.05*c.r*m, 1.05*c.r*m, 0.02*m);
+      lake->SetTLevel(6); lake->SetPLevel(48);
+      lake->SetColor(0.1, 0.62, 0.75);
+    }
+  }
+
   // The cart, and the seat the camera rides.
   CREATE_ADD_GLASS(car, ZNode, scene, "Car", 0);
   car->SetTrans(frame(tp[0].pos * m, tp[0].x, tp[0].z));
@@ -386,14 +527,17 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
 
   printf("coaster: %d points, %.0f m, a lap in %.0f s.\n", n, 2.0*n, time);
 
-  eye();
-  g_pupil->SetCameraBase(seat);
-  g_pupil->SetXrTilt(PupilInfo::XT_Ride);
-  g_pupil->SetNearClip(0.1*m);
-  g_pupil->SetFarClip(1500*m);
-  g_pupil->SetClearColor(0.6, 0.72, 0.9);
-  // The camera sits on the seat once the pupil exists.
-  TTimer::SingleShot(3000, "gled::PupilInfo", g_pupil, "EmitCameraHomeRay()");
+  if (Gled::theOne->HasGUILibs())
+  {
+    eye();
+    g_pupil->SetCameraBase(seat);
+    g_pupil->SetXrTilt(PupilInfo::XT_Ride);
+    g_pupil->SetNearClip(0.1*m);
+    g_pupil->SetFarClip(1500*m);
+    g_pupil->SetClearColor(0.6, 0.72, 0.9);
+    // The camera sits on the seat once the pupil exists.
+    TTimer::SingleShot(3000, "gled::PupilInfo", g_pupil, "EmitCameraHomeRay()");
+  }
 
   etor->Start();
 }

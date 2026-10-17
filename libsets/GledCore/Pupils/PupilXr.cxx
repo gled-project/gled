@@ -26,6 +26,7 @@
 #include <openxr/openxr_platform.h>
 
 #include <cmath>
+#include <memory>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -37,6 +38,20 @@ namespace
 {
   const XrSpaceLocationFlags kPoseValid =
     XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+
+  // Read locks on the camera base and its parents for one frame, so the
+  // ridden frame and both eyes see a moving base at the same place.
+  struct BaseChainLock
+  {
+    std::vector<ZNode*> fLocked;
+    BaseChainLock(PupilInfo* pi)
+    {
+      ZNode *n;
+      { GLensReadHolder _lck(pi); n = pi->GetCameraBase(); }
+      while (n) { n->ReadLock(); fLocked.push_back(n); n = n->GetParent(); }
+    }
+    ~BaseChainLock() { for (auto i = fLocked.rbegin(); i != fLocked.rend(); ++i) (*i)->ReadUnlock(); }
+  };
 
   ZTrans pose_to_trans(const XrPosef& pose)
   {
@@ -979,6 +994,7 @@ void PupilXr::frame()
 
   // The eyes, the head between them, and the frame the headset rides.
   M.bViewsOk = false;
+  std::unique_ptr<BaseChainLock> chain_lock;
   if (fs.shouldRender)
   {
     XrViewLocateInfo li { XR_TYPE_VIEW_LOCATE_INFO };
@@ -998,6 +1014,7 @@ void PupilXr::frame()
       M.fHead.CM(2, 3) = (a.z + b.z) / 2;
       try
       {
+        chain_lock.reset(new BaseChainLock(P.mInfo));
         ZTrans ride = P.RideFrame();
         ride.Invert();
         // Gled's frame (x forward, y left, z up) to GL's eye axes (x right, y up, -z forward).
@@ -1040,6 +1057,7 @@ void PupilXr::frame()
       pv[e].subImage.swapchain        = M.fEyes[e].fSwapchain;
       pv[e].subImage.imageRect.extent = { M.fEyes[e].fW, M.fEyes[e].fH };
     }
+    chain_lock.reset();
     layer.space     = M.fSpace;
     layer.viewCount = 2;
     layer.views     = pv;
