@@ -1,5 +1,6 @@
 // A roller coaster to ride in a headset: a closed track with a chain lift, a
-// drop, a vertical loop, a banked turn and a helix, under a sky.
+// drop, a vertical loop, a banked turn and a helix, under a sky, over tropical
+// hills with water-filled craters.
 //
 // The track's centre line is a centripetal Catmull-Rom spline through key
 // points, resampled into WSPoints about 2 m apart. Each segment takes the
@@ -143,6 +144,31 @@ namespace
     return t;
   }
 
+  struct Crater { Double_t x, y, r, depth; };
+
+  // Ground height in metres: rolling hills, mountains towards the edges, and
+  // craters whose floors below the water level fill with water; flattened
+  // to at most 0.5 m near the track.
+  Double_t coaster_ground(Double_t x, Double_t y, Double_t d_track, Double_t water)
+  {
+    static const Crater craters[] = {
+      { -60, 60, 25, 9 }, { 20, 92, 18, 8 }, { 150, 98, 30, 10 },
+      { 200, -40, 22, 8 }, { -40, -60, 20, 8 }, { 90, -52, 16, 7 }
+    };
+    Double_t h = 4 + 3 * std::sin(x / 37) * std::cos(y / 29) + 2 * std::sin((x + y) / 23);
+    const Double_t rc = std::hypot(x - 60, y - 20);
+    if (rc > 130) h += 14 * TMath::Min(1.0, (rc - 130) / 60);
+    for (const Crater& c : craters)
+    {
+      const Double_t r = std::hypot(x - c.x, y - c.y) / c.r;
+      if (r < 1) h -= c.depth * (1 - r * r);
+      h += 1.5 * std::exp(-std::pow((r - 1) / 0.25, 2));
+    }
+    h = TMath::Max(h, water);
+    const Double_t f = TMath::Min(1.0, TMath::Max(0.0, (d_track - 6) / 20));
+    return f * h + (1 - f) * TMath::Min(h, 0.5);
+  }
+
   WSSeed* rail_seed(ZNode* parent, const char* name, Float_t radius, const ZColor& col)
   {
     WSSeed* s = new WSSeed(name);
@@ -209,15 +235,33 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   sky->SetTexture(sky_img);
   sky->SetRnrMod(sky_mod);
 
-  CREATE_ADD_GLASS(ground, Rect, scene, "Ground", 0);
-  ground->SetPos(60*m, 20*m, 0);
-  ground->SetULen(400*m); ground->SetVLen(400*m);
-  ground->SetUStrips(80); ground->SetVStrips(80);
-  ground->SetColor(0.35, 0.42, 0.25);
-
   // The track: the centre line the cart rides, hidden, and what is drawn.
   std::vector<TrackPoint> tp = coaster_track(2, g);
   const int n = tp.size();
+
+  // The ground, 400 m square in cells of 2 m, coloured by height.
+  CREATE_ADD_GLASS(palette, RGBAPalette, scene, "Tropical", 0);
+  palette->SetMarksFromPOVFile("coaster_tropical.pov");
+  {
+    const int    nc = 201;
+    const Double_t x0 = 60 - 200, y0 = 20 - 200, dc = 2, water = -2;
+    std::vector<Float_t> hf(nc * nc);
+    for (int iy = 0; iy < nc; ++iy)
+      for (int ix = 0; ix < nc; ++ix)
+      {
+        const Double_t x = x0 + ix * dc, y = y0 + iy * dc;
+        Double_t d2 = 1e12;
+        for (const TrackPoint& p : tp)
+          d2 = TMath::Min(d2, (p.pos.x - x) * (p.pos.x - x) + (p.pos.y - y) * (p.pos.y - y));
+        hf[iy * nc + ix] = coaster_ground(x, y, std::sqrt(d2), water) * m;
+      }
+    CREATE_ADD_GLASS(ground, RectTerrain, scene, "Ground", 0);
+    ground->SetFromArray(nc, nc, &hf[0]);
+    ground->SetDx(dc*m); ground->SetDy(dc*m);
+    ground->SetPos(x0*m, y0*m, 0);
+    ground->SetRibbon(palette);
+    ground->SetRnrMode(RectTerrain::RM_SmoothTring);
+  }
 
   CREATE_ADD_GLASS(line, WSSeed, scene, "CentreLine", 0);
   line->SetRnrSelf(false);
@@ -309,10 +353,24 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   // The cart, and the seat the camera rides.
   CREATE_ADD_GLASS(car, ZNode, scene, "Car", 0);
   car->SetTrans(frame(tp[0].pos * m, tp[0].x, tp[0].z));
-  CREATE_ADD_GLASS(body, Box, car, "Body", 0);
-  body->SetPos(0, 0, 0.35*m);
-  body->SetABC(1.8*m, 1.3*m, 0.5*m);
-  body->SetColor(0.9, 0.75, 0.1);
+  // An open half shell, textured and lit from both sides.
+  CREATE_ADD_GLASS(cart_img, ZImage, scene, "CartTexture", 0);
+  cart_img->SetFile("checker_4.png");
+  cart_img->Load();
+  CREATE_ADD_GLASS(cart_mod, ZGlLightModel, scene, "CartLightModel", 0);
+  cart_mod->SetLightModelOp(ZRnrModBase::O_On);
+  cart_mod->SetLiMoTwoSide(true);
+  cart_mod->SetShadeModelOp(ZRnrModBase::O_On);
+  cart_mod->SetFaceCullOp(ZRnrModBase::O_Off);
+  CREATE_ADD_GLASS(body, SMorph, car, "Body", 0);
+  body->SetPos(0, 0, 0.6*m);
+  body->SetScales(1.2*m, 0.75*m, 0.45*m);
+  body->SetPhiMean(0.75); body->SetPhiRange(0.5);
+  body->SetTLevel(16); body->SetPLevel(16);
+  body->SetColor(1, 0.3, 0.2);
+  body->SetTexture(cart_img);
+  body->SetTexXC(2);
+  body->SetRnrMod(cart_mod);
   CREATE_ADD_GLASS(seat, ZNode, car, "Seat", 0);
   seat->SetPos(-0.2*m, 0, 1.25*m);
 
