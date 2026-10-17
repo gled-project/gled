@@ -233,7 +233,8 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   }
 
   // Banking: the felt force a - g, normal to the tangent, from the centre
-  // line's own motion, averaged across each point; kept where it is weak.
+  // line's own motion, averaged across each point. Where it is weak or pulls
+  // out of the seat, as over a crest, the bank stays: airtime, not a roll.
   std::vector<ZPoint> up(n);
   Double_t time = 0;
   for (int i = 0; i < n; ++i)
@@ -244,10 +245,10 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     ZPoint f = (a1 + a2) * (0.5 / m);
     f.z += g;
     f -= tp[i].x * f.Dot(tp[i].x);
-    if (f.Mag() > 0.3 * g || i == 0)
-      up[i] = f * (1 / f.Mag());
-    else
-      up[i] = up[i - 1];
+    ZPoint prev = i ? up[i - 1] : ZPoint(0, 0, 1);
+    prev -= tp[i].x * prev.Dot(tp[i].x);
+    prev.Normalize();
+    up[i] = f.Dot(prev) > 0.3 * g ? f * (1 / f.Mag()) : prev;
     time += tp[i].dt;
   }
   for (int pass = 0; pass < 3; ++pass)

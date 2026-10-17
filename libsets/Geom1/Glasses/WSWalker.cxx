@@ -61,11 +61,12 @@ void WSWalker::fly(Double_t t)
   const ZPoint x(ax[0], ax[1], ax[2]);
   ZPoint up = m_up_ok ? m_up : ZPoint(az[0], az[1], az[2]);
 
-  // Near weightlessness the felt force has no direction; the up stays.
+  // Where the felt force is weak or pulls out of the seat, as over a crest,
+  // the up stays: airtime, not a roll.
   ZPoint f = acc;
   f.z += mGravity;
   f -= x * f.Dot(x);
-  if(f.Mag() > 0.2*mGravity) {
+  if(f.Dot(up) > 0.2*mGravity) {
     f.Normalize();
     const Double_t dt = t - m_last_time;
     const Double_t k  = (mFlightTau > 0 && dt >= 0 && dt < 1) ? 1 - TMath::Exp(-dt/mFlightTau) : 1;

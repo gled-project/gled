@@ -29,7 +29,7 @@ protected:
 
   // Flight: the node's up follows the felt force, acceleration minus gravity
   // (-z of the seed, in units per s^2), as in a coordinated turn, smoothed over
-  // a time constant in s.
+  // a time constant in s, while the force presses into the seat.
   Bool_t         bFlight;    // X{GS} 7 Bool(-join=>1)
   Double_t       mGravity;   // X{GS} 7 Value(-range=>[0,1e4,1,100], -join=>1)
   Double_t       mFlightTau; // X{GS} 7 Value(-range=>[0,10,1,1000])
