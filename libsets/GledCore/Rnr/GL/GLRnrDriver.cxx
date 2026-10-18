@@ -32,7 +32,7 @@ GLRnrDriver::GLRnrDriver(Eye* e, const TString& r) : RnrDriver(e, r)
   const char* stats = getenv("GLED_RNR_STATS");
   mStatsEvery = stats ? atoi(stats) : 0;
   mStatsN = 0;
-  mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = 0;
+  mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = mStatsReplays = 0;
 
   mMaxLamps = 8;
   mLamps = new A_Rnr* [mMaxLamps];
@@ -156,13 +156,14 @@ void GLRnrDriver::EndRender()
     mStatsCulled      += mCullCount;
     mStatsCulledParts += mCullPartCount;
     mStatsBlended     += mBlendedCount;
+    mStatsReplays     += mReplayCount;
     if (++mStatsN == mStatsEvery)
     {
-      printf("GLRnrDriver stats: %d renders, mean %.2f ms, max %.2f ms, mean culled %.1f lenses, %.1f parts, mean blended %.1f\n",
+      printf("GLRnrDriver stats: %d renders, mean %.2f ms, max %.2f ms, mean culled %.1f lenses, %.1f parts, mean blended %.1f in %.1f replays\n",
              mStatsN, mStatsSum / mStatsN, mStatsMax, mStatsCulled / mStatsN, mStatsCulledParts / mStatsN,
-             mStatsBlended / mStatsN);
+             mStatsBlended / mStatsN, mStatsReplays / mStatsN);
       mStatsN = 0;
-      mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = 0;
+      mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = mStatsReplays = 0;
     }
   }
 }
@@ -189,8 +190,8 @@ void GLRnrDriver::FlushBlended()
   {
     const BlendedItem &it = mBlended[i];
     if ( ! it.bSorted) continue;
-    const ZTrans  m = mViewAtBegin * it.fGCS;
-    const Float_t z = m.CM(2,0)*it.fCtr[0] + m.CM(2,1)*it.fCtr[1] + m.CM(2,2)*it.fCtr[2] + m.CM(2,3);
+    const ZTrans &v = mViewAtBegin;
+    const Float_t z = v.CM(2,0)*it.fPos[0] + v.CM(2,1)*it.fPos[1] + v.CM(2,2)*it.fPos[2] + v.CM(2,3);
     // Distance along the view is -z; map the float to a monotone key, inverted for descending.
     union { Float_t f; UInt_t u; } d = { -z };
     UInt_t key = (d.u & 0x80000000u) ? ~d.u : (d.u | 0x80000000u);
@@ -215,8 +216,14 @@ void GLRnrDriver::FlushBlended()
 
   glMatrixMode(GL_MODELVIEW);
   glPushMatrix();
-  for (UInt_t i : mBlendedOrder)
-    draw_blended(mBlended[i]);
+  // Consecutive draws under the same mods share one replay.
+  const UInt_t no = mBlendedOrder.size();
+  for (UInt_t b = 0, e; b < no; b = e)
+  {
+    const Int_t beg = mBlended[mBlendedOrder[b]].fModBeg;
+    for (e = b + 1; e < no && mBlended[mBlendedOrder[e]].fModBeg == beg; ++e) ;
+    draw_blended(b, e);
+  }
   glPopMatrix();
 }
 
@@ -230,12 +237,22 @@ void GLRnrDriver::push_blended_frame(PMSEntry& pmse, ZNode* node, const ZTrans& 
   glLoadMatrixd((mViewAtBegin * gcs).Array());
 }
 
-void GLRnrDriver::draw_blended(const BlendedItem& it)
+void GLRnrDriver::draw_blended(UInt_t ob, UInt_t oe)
 {
   // Mods are replayed by their own calls, as GL state is not data. Depth writes are
   // off unless a mod turns them on.
-  const Int_t nm = it.fModEnd - it.fModBeg;
+  const BlendedItem &first = mBlended[mBlendedOrder[ob]];
+  const Int_t nm = first.fModEnd - first.fModBeg;
   if ((Int_t) mBlendedPMS.size() < nm + 1) mBlendedPMS.resize(nm + 1);
+  ++mReplayCount;
+
+  // The entries live in mBlendedPMS; pop them also when a renderer throws.
+  struct PMGuard
+  {
+    GLRnrDriver *fRD;
+    Int_t        fSize;
+    ~PMGuard() { while (fRD->SizePM() > fSize) fRD->PopPM(); }
+  } _pm_guard { this, SizePM() };
 
   glPushAttrib(GL_ALL_ATTRIB_BITS);
   glDepthMask(GL_FALSE);
@@ -243,14 +260,16 @@ void GLRnrDriver::draw_blended(const BlendedItem& it)
 
   for (Int_t k = 0; k < nm; ++k)
   {
-    const BlendedMod &m = mBlendedMods[it.fModBeg + k];
+    const BlendedMod &m = mBlendedMods[first.fModBeg + k];
     push_blended_frame(mBlendedPMS[k], m.fNode, m.fGCS);
     if (mTraceFile) trace_op(m.fRnr, m.fKind == RnrOp::K_PreDraw ? "blended-pre" : "blended-mod");
     GLensReadHolder _lck(m.fRnr->fImg->fLens);
     if (m.fKind == RnrOp::K_PreDraw) m.fRnr->PreDraw(this);
     else                             m.fRnr->Draw(this);
   }
+  for (UInt_t o = ob; o < oe; ++o)
   {
+    const BlendedItem &it = mBlended[mBlendedOrder[o]];
     push_blended_frame(mBlendedPMS[nm], it.fNode, it.fGCS);
     if (mTraceFile) trace_op(it.fRnr, "blended-draw");
     GLensReadHolder _lck(it.fRnr->fImg->fLens);
@@ -259,7 +278,7 @@ void GLRnrDriver::draw_blended(const BlendedItem& it)
   }
   for (Int_t k = nm - 1; k >= 0; --k)
   {
-    const BlendedMod &m = mBlendedMods[it.fModBeg + k];
+    const BlendedMod &m = mBlendedMods[first.fModBeg + k];
     if (m.fKind == RnrOp::K_PreDraw)
     {
       glLoadMatrixd((mViewAtBegin * m.fGCS).Array());

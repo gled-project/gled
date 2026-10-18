@@ -49,8 +49,9 @@ RnrDriver::RnrDriver(Eye* e, const TString& r) : mEye(e), mRnrName(r)
   const char* blended = getenv("GLED_RNR_BLENDED");
   bBlendedPass  = ! (blended && blended[0] == '0');
   bDeferBlended = false;
-  mBlendedCount = 0;
+  mBlendedCount = mReplayCount = 0;
   mNoteTarget   = -1;
+  mModGen = mDeferGen = 0;
 
   mTraceFile = 0;
   mRnrDepth  = 0;
@@ -280,7 +281,7 @@ void RnrDriver::Render(A_Rnr* rnr)
   const vRnrOp_t &ops   = rnr->mProgram->fOps;
   const Int_t     n     = ops.size();
   const Int_t     depth = mCalls.size();
-  mCalls.push_back({ &ops, 0 });
+  mCalls.push_back({ &ops, 0, mPMStack.back() });
   PopBackGuard<CallFrame> _call_guard(mCalls);
 
   for (Int_t i = 0; i < n; ++i)
@@ -304,7 +305,7 @@ void RnrDriver::Render(A_Rnr* rnr)
         // Pre ops of other renderers are mods (links, rnr-mods); the lens's own pre is its frame.
         if (op.fRnr != rnr)
         {
-          mMods.push_back({ op.fRnr, mPMStack.back(), 0, RnrOp::K_PreDraw, depth, -1, -1 });
+          push_mod(op.fRnr, RnrOp::K_PreDraw, depth);
           mNoteTarget = mMods.size() - 1;
         }
         op.fRnr->PreDraw(this);
@@ -321,10 +322,10 @@ void RnrDriver::Render(A_Rnr* rnr)
           op.fRnr->Draw(this);
           mNoteTarget = -1;
         }
-        else if (can_defer() && op.fRnr->IsBlended(this))
+        else if (can_defer() && op.fRnr->IsBlended(this) && may_defer())
         {
           if (mTraceFile) trace_op(op.fRnr, "defer");
-          defer_blended(op.fRnr);
+          defer_blended(op.fRnr, rnr, depth);
         }
         else
         {
@@ -352,11 +353,18 @@ void RnrDriver::Render(A_Rnr* rnr)
 // Blended pass
 /**************************************************************************/
 
+void RnrDriver::push_mod(A_Rnr* rnr, UChar_t kind, Int_t depth)
+{
+  mMods.push_back({ rnr, mPMStack.back(), 0, kind, ! rnr->IsReplayable(this), depth, -1, -1 });
+  ++mModGen;
+}
+
 void RnrDriver::push_unscoped(A_Rnr* rnr, Int_t depth)
 {
   // An unscoped mod lasts until the post op of the innermost enclosing pair,
   // here or in a caller; with none, until the end of the render.
-  ModEntry e = { rnr, mPMStack.back(), 0, RnrOp::K_Draw, depth, -1, -1 };
+  push_mod(rnr, RnrOp::K_Draw, depth);
+  ModEntry &e = mMods.back();
   for (Int_t d = depth; d >= 0 && e.fEndDepth < 0; --d)
   {
     const vRnrOp_t &o = *mCalls[d].fOps;
@@ -371,7 +379,6 @@ void RnrDriver::push_unscoped(A_Rnr* rnr, Int_t depth)
       }
     }
   }
-  mMods.push_back(e);
 }
 
 void RnrDriver::pop_mod(A_Rnr* rnr, Int_t depth)
@@ -383,6 +390,7 @@ void RnrDriver::pop_mod(A_Rnr* rnr, Int_t depth)
     if (e.fRnr == rnr && e.fKind == RnrOp::K_PreDraw && e.fDepth == depth)
     {
       mMods.erase(mMods.begin() + k);
+      ++mModGen;
       return;
     }
   }
@@ -390,17 +398,17 @@ void RnrDriver::pop_mod(A_Rnr* rnr, Int_t depth)
 
 void RnrDriver::end_unscoped(Int_t depth, Int_t op)
 {
-  mMods.erase(std::remove_if(mMods.begin(), mMods.end(), [=](const ModEntry& e)
-                             { return e.fKind == RnrOp::K_Draw && e.fEndDepth == depth && e.fEndOp == op; }),
-              mMods.end());
+  auto i = std::remove_if(mMods.begin(), mMods.end(), [=](const ModEntry& e)
+                          { return e.fKind == RnrOp::K_Draw && e.fEndDepth == depth && e.fEndOp == op; });
+  if (i != mMods.end()) { mMods.erase(i, mMods.end()); ++mModGen; }
 }
 
 void RnrDriver::end_program(Int_t depth)
 {
   // Unpaired pre ops end with their program.
-  mMods.erase(std::remove_if(mMods.begin(), mMods.end(), [=](const ModEntry& e)
-                             { return e.fKind == RnrOp::K_PreDraw ? e.fDepth >= depth : e.fEndDepth >= depth; }),
-              mMods.end());
+  auto i = std::remove_if(mMods.begin(), mMods.end(), [=](const ModEntry& e)
+                          { return e.fKind == RnrOp::K_PreDraw ? e.fDepth >= depth : e.fEndDepth >= depth; });
+  if (i != mMods.end()) { mMods.erase(i, mMods.end()); ++mModGen; }
 }
 
 ZGlBlending* RnrDriver::ActiveBlending()
@@ -416,23 +424,51 @@ bool RnrDriver::BlendingOn()
   return b && b->GetBlendOp() == ZRnrModBase::O_On;
 }
 
-void RnrDriver::defer_blended(A_Rnr* rnr)
+bool RnrDriver::may_defer()
+{
+  // Not under a mod that cannot be replayed, nor under a blending drawn in place.
+  ZGlBlending *b = 0;
+  for (auto i = mMods.rbegin(); i != mMods.rend(); ++i)
+  {
+    if (i->bInPlace) return false;
+    if ( ! b) b = i->fBlend;
+  }
+  return ! b || b->GetBlendPass() != ZGlBlending::BP_InPlace;
+}
+
+void RnrDriver::defer_blended(A_Rnr* rnr, A_Rnr* owner, Int_t depth)
 {
   BlendedItem it;
   it.fRnr  = rnr;
   it.fNode = TopPMNode();
   it.fGCS  = ToGCS();
+  // The cull box is in the frame at the lens's entry; a lens drawn through a link has none.
   Float_t box[6];
-  if (rnr->GetCullBox(this, box))
-    for (int i = 0; i < 3; ++i) it.fCtr[i] = box[i];
+  if (rnr == owner && rnr->GetCullBox(this, box))
+  {
+    const ZTrans &t = mCalls[depth].fEntryPM->ToGCS();
+    for (int i = 0; i < 3; ++i)
+      it.fPos[i] = t.CM(i,0)*box[0] + t.CM(i,1)*box[1] + t.CM(i,2)*box[2] + t.CM(i,3);
+  }
   else
-    it.fCtr[0] = it.fCtr[1] = it.fCtr[2] = 0;
+  {
+    for (int i = 0; i < 3; ++i) it.fPos[i] = it.fGCS.CM(i,3);
+  }
   ZGlBlending *b = ActiveBlending();
   it.bSorted = ! b || b->GetBlendPass() == ZGlBlending::BP_BackToFront;
-  it.fModBeg = mBlendedMods.size();
-  for (const ModEntry &e : mMods)
-    mBlendedMods.push_back({ e.fRnr, e.fPM->fNode, e.fPM->ToGCS(), e.fKind });
-  it.fModEnd = mBlendedMods.size();
+  if ( ! mBlended.empty() && mDeferGen == mModGen)
+  {
+    it.fModBeg = mBlended.back().fModBeg;
+    it.fModEnd = mBlended.back().fModEnd;
+  }
+  else
+  {
+    it.fModBeg = mBlendedMods.size();
+    for (const ModEntry &e : mMods)
+      mBlendedMods.push_back({ e.fRnr, e.fPM->fNode, e.fPM->ToGCS(), e.fKind });
+    it.fModEnd = mBlendedMods.size();
+    mDeferGen = mModGen;
+  }
   mBlended.push_back(it);
   ++mBlendedCount;
 }
@@ -444,6 +480,7 @@ void RnrDriver::clear_blended()
   mBlendedMods.clear();
   mMods.clear();
   mCalls.clear();
+  ++mModGen;
 }
 
 void RnrDriver::SetFrustum(const ZTrans& m)
@@ -516,7 +553,7 @@ void RnrDriver::BeginRender()
   if (mTraceFile) { mTrace.clear(); mRnrDepth = 0; }
   clear_blended();
   bDeferBlended = bBlendedPass;
-  mBlendedCount = 0;
+  mBlendedCount = mReplayCount = 0;
   mNoteTarget   = -1;
 }
 

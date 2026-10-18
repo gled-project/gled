@@ -89,6 +89,9 @@ public:
   virtual bool HasOutsideEffects();
   // True when the draw goes to the blended pass; by default when the active ZGlBlending blends.
   virtual bool IsBlended(RnrDriver* rd);
+  // False for a mod that sets the matrices, or whose PreDraw is not a pure function
+  // of its lens: blended draws under it are drawn in place, not replayed.
+  virtual bool IsReplayable(RnrDriver* rd) { return true; }
 
   virtual void PreDraw(RnrDriver* rd) = 0;
   virtual void Draw(RnrDriver* rd) = 0;

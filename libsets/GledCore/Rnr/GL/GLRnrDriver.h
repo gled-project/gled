@@ -73,7 +73,7 @@ protected:
   virtual bool can_defer() { return bDeferBlended && ! bInPicking && ! bInDLRebuild; }
 
   void push_blended_frame(PMSEntry& pmse, ZNode* node, const ZTrans& gcs);
-  void draw_blended(const BlendedItem& it);
+  void draw_blended(UInt_t ob, UInt_t oe);
 
 public:
   GLRnrDriver(Eye* e, const TString& r);
@@ -92,7 +92,7 @@ public:
 
   // Render times, printed every mStatsEvery renders when GLED_RNR_STATS gives it.
   Int_t         mStatsEvery, mStatsN;
-  Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts, mStatsBlended;
+  Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts, mStatsBlended, mStatsReplays;
   GTime         mStatsStart;
   virtual void  check_entry_frame(A_Rnr* rnr);
   virtual void  CheckCulled(const TString& what, const Float_t* ctr_ext);

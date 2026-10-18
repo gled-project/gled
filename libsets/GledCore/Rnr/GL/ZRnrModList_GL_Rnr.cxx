@@ -38,3 +38,11 @@ void ZRnrModList_GL_Rnr::PostDraw(RnrDriver* rd)
     rd->GetRnr(*img)->PostDraw(rd);
   PARENT::PostDraw(rd);
 }
+
+bool ZRnrModList_GL_Rnr::IsReplayable(RnrDriver* rd)
+{
+  OS::lpZGlassImg_t* imgs = fImg->GetElementImgs();
+  for(OS::lpZGlassImg_i img=imgs->begin(); img!=imgs->end(); ++img)
+    if ( ! rd->GetRnr(*img)->IsReplayable(rd)) return false;
+  return true;
+}

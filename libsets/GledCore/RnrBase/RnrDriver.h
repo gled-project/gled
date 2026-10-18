@@ -146,8 +146,8 @@ public:
     A_Rnr   *fRnr;
     ZNode   *fNode;
     ZTrans   fGCS;
-    Float_t  fCtr[3];          // Sort point in the lens frame: the cull-box centre or the origin.
-    Int_t    fModBeg, fModEnd; // Range in mBlendedMods.
+    Double_t fPos[3];          // Global sort point: the cull-box centre or the origin.
+    Int_t    fModBeg, fModEnd; // Range in mBlendedMods; consecutive draws under the same mods share it.
     Bool_t   bSorted;          // Back to front; otherwise in tree order, before the sorted ones.
   };
 
@@ -159,6 +159,7 @@ protected:
     PMSEntry    *fPM;
     ZGlBlending *fBlend;              // Set through NoteBlending while the mod's op runs.
     UChar_t      fKind;               // K_PreDraw, or K_Draw for an unscoped mod.
+    Bool_t       bInPlace;            // Not replayable: blended draws under it are drawn in place.
     Int_t        fDepth;              // Render depth of the op.
     Int_t        fEndDepth, fEndOp;   // Unscoped: the post op that ends its synthesised scope.
   };
@@ -166,23 +167,28 @@ protected:
   {
     const vRnrOp_t *fOps;
     Int_t           fOp;
+    PMSEntry       *fEntryPM; // Position entry at the lens's entry, the frame of its cull box.
   };
 
   std::vector<ModEntry>    mMods;
   std::vector<CallFrame>   mCalls;
   Int_t                    mNoteTarget;
+  UInt_t                   mModGen, mDeferGen; // Changes of mMods; mMods at the last deferral.
   std::vector<BlendedItem> mBlended;
   std::vector<BlendedMod>  mBlendedMods;
   std::deque<PMSEntry>     mBlendedPMS; // Position entries for the replay; a deque does not move them.
   Bool_t                   bBlendedPass;   // X{gs} Defer blended draws; GLED_RNR_BLENDED=0 turns it off.
   Bool_t                   bDeferBlended;  // Until FlushBlended in a render.
   UInt_t                   mBlendedCount;  // X{g} Draws deferred in the last render.
+  UInt_t                   mReplayCount;   // X{g} Mod replays in the last render.
 
+  void push_mod(A_Rnr* rnr, UChar_t kind, Int_t depth);
   void push_unscoped(A_Rnr* rnr, Int_t depth);
   void pop_mod(A_Rnr* rnr, Int_t depth);
   void end_unscoped(Int_t depth, Int_t op);
   void end_program(Int_t depth);
-  void defer_blended(A_Rnr* rnr);
+  bool may_defer();
+  void defer_blended(A_Rnr* rnr, A_Rnr* owner, Int_t depth);
   void clear_blended();
 
   virtual bool can_defer() { return false; }

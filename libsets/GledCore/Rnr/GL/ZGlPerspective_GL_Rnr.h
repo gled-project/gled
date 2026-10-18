@@ -26,6 +26,7 @@ public:
   { _init(); }
 
   virtual void PreDraw(RnrDriver* rd);
+  virtual bool IsReplayable(RnrDriver* rd) { return false; }
   virtual void Draw(RnrDriver* rd);
   virtual void PostDraw(RnrDriver* rd);
 

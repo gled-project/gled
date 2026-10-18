@@ -17,8 +17,9 @@ class ZGlBlending : public ZRnrModBase
   MAC_RNR_FRIENDS(ZGlBlending);
 
 public:
-  // Where blended draws go in the blended pass: in tree order, before the sorted ones, or sorted.
-  enum BlendPass_e { BP_InOrder, BP_BackToFront };
+  // Blended draws go to the blended pass in tree order before the sorted ones,
+  // or sorted back to front, or are drawn in place.
+  enum BlendPass_e { BP_InOrder, BP_BackToFront, BP_InPlace };
 
 private:
   void _init();
