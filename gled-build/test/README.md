@@ -110,6 +110,22 @@ cd $GLEDSYS/demos/GledCore
 GLED_RNR_CHECK=1 timeout 22 gled --noprompt $GLEDSYS/test/regress/rnr_cycle.C
 ```
 
+Blended draws, those under a `ZGlBlending` with blending on, are deferred
+and drawn after the opaque ones, in tree order or back to front by the
+blending's `BlendPass`; `BP_InPlace` and `GLED_RNR_BLENDED=0` draw them in
+place. **`blended.C`** draws two overlapping spheres of alpha 0.5, the near
+one first in the tree, dumps images under each pass and checks the colour of
+the overlap. One run cannot turn the pass off, so the macro reads
+`GLED_RNR_BLENDED` and expects the colours of the pass in place when it is 0.
+Both runs must print `blended: all passed`; on an off-screen X server
+(`Xvnc :77`, as at the top of this file):
+
+```sh
+cd $GLEDSYS/demos/GledCore
+DISPLAY=:77 timeout 30 gled --noprompt $GLEDSYS/test/regress/blended.C
+DISPLAY=:77 GLED_RNR_BLENDED=0 timeout 30 gled --noprompt $GLEDSYS/test/regress/blended.C
+```
+
 Lenses whose renderer gives a box (so far Extendio, in `tringula.C`) are culled
 against the view frustum; `GLED_RNR_CULL=0` turns that off. Check mode also
 reports a GL modelview that differs from the driver's position stack at a cull
