@@ -46,12 +46,14 @@ void ZGlBlending_GL_Rnr::SetupGL(RnrDriver* rd)
 
   switch(x.mBlendOp) {
   case ZRnrModBase::O_On:
+    rd->NoteBlending(mZGlBlending);
     glBlendFunc(x.mBSrcFac, x.mBDstFac);
     glBlendEquation(x.mBEquation);
     glBlendColor(x.mBConstCol.r(), x.mBConstCol.g(), x.mBConstCol.b(), x.mBConstCol.a());
     glEnable(GL_BLEND);
     break;
   case ZRnrModBase::O_Off:
+    rd->NoteBlending(mZGlBlending);
     glDisable(GL_BLEND);
     break;
   case ZRnrModBase::O_Nop:

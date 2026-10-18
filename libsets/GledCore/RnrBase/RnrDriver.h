@@ -11,6 +11,7 @@
 #include <Stones/ZTrans.h>
 #include <Stones/ZColor.h>
 
+#include <deque>
 #include <list>
 #include <stack>
 #include <string>
@@ -23,6 +24,7 @@ namespace gled {
 /**************************************************************************/
 
 class GLRnrDriver;
+class ZGlBlending;
 
 class RnrDriver : public OptoStructs::ImageConsumer
 {
@@ -127,6 +129,64 @@ protected:
 
   void trace_op(A_Rnr* rnr, const char* op);
 
+  //----------------------------------------------------------------
+  // Blended pass: blended draws are deferred with their state and drawn after the rest.
+
+public:
+  // A mod to replay around a deferred draw: PreDraw and PostDraw, or Draw for an unscoped one.
+  struct BlendedMod
+  {
+    A_Rnr   *fRnr;
+    ZNode   *fNode;  // Top of the position stack at the mod's op.
+    ZTrans   fGCS;
+    UChar_t  fKind;
+  };
+  struct BlendedItem
+  {
+    A_Rnr   *fRnr;
+    ZNode   *fNode;
+    ZTrans   fGCS;
+    Float_t  fCtr[3];          // Sort point in the lens frame: the cull-box centre or the origin.
+    Int_t    fModBeg, fModEnd; // Range in mBlendedMods.
+    Bool_t   bSorted;          // Back to front; otherwise in tree order, before the sorted ones.
+  };
+
+protected:
+  // Mods active at the current op, in the order they were applied.
+  struct ModEntry
+  {
+    A_Rnr       *fRnr;
+    PMSEntry    *fPM;
+    ZGlBlending *fBlend;              // Set through NoteBlending while the mod's op runs.
+    UChar_t      fKind;               // K_PreDraw, or K_Draw for an unscoped mod.
+    Int_t        fDepth;              // Render depth of the op.
+    Int_t        fEndDepth, fEndOp;   // Unscoped: the post op that ends its synthesised scope.
+  };
+  struct CallFrame
+  {
+    const vRnrOp_t *fOps;
+    Int_t           fOp;
+  };
+
+  std::vector<ModEntry>    mMods;
+  std::vector<CallFrame>   mCalls;
+  Int_t                    mNoteTarget;
+  std::vector<BlendedItem> mBlended;
+  std::vector<BlendedMod>  mBlendedMods;
+  std::deque<PMSEntry>     mBlendedPMS; // Position entries for the replay; a deque does not move them.
+  Bool_t                   bBlendedPass;   // X{gs} Defer blended draws; GLED_RNR_BLENDED=0 turns it off.
+  Bool_t                   bDeferBlended;  // Until FlushBlended in a render.
+  UInt_t                   mBlendedCount;  // X{g} Draws deferred in the last render.
+
+  void push_unscoped(A_Rnr* rnr, Int_t depth);
+  void pop_mod(A_Rnr* rnr, Int_t depth);
+  void end_unscoped(Int_t depth, Int_t op);
+  void end_program(Int_t depth);
+  void defer_blended(A_Rnr* rnr);
+  void clear_blended();
+
+  virtual bool can_defer() { return false; }
+
 public:
   RnrDriver(Eye* e, const TString& r);
   virtual ~RnrDriver();
@@ -164,6 +224,13 @@ public:
 
   virtual void BeginRender();
   virtual void EndRender();
+
+  // Called by ZGlBlending renderers; attaches the blending to the mod being applied.
+  void         NoteBlending(ZGlBlending* b) { if (mNoteTarget >= 0) mMods[mNoteTarget].fBlend = b; }
+  ZGlBlending* ActiveBlending();
+  bool         BlendingOn();
+  // Draws the deferred blended draws; later draws in the render are not deferred.
+  virtual void FlushBlended() { clear_blended(); }
 
   // Position Matrix Stack
   void PushPM(PMSEntry& pmse) { pmse.fPrev = mPMStack.back(); mPMStack.push_back(&pmse); }

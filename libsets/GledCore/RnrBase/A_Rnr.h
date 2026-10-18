@@ -87,6 +87,8 @@ public:
   virtual bool GetCullBox(RnrDriver* rd, Float_t* ctr_ext) { return false; }
   // True when a draw changes state for what is drawn after the lens.
   virtual bool HasOutsideEffects();
+  // True when the draw goes to the blended pass; by default when the active ZGlBlending blends.
+  virtual bool IsBlended(RnrDriver* rd);
 
   virtual void PreDraw(RnrDriver* rd) = 0;
   virtual void Draw(RnrDriver* rd) = 0;

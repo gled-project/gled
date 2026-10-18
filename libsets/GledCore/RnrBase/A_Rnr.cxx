@@ -43,6 +43,11 @@ bool A_Rnr::HasOutsideEffects()
   return rb.fSelf[1] && ! rb.fSelf[0] && ! rb.fSelf[2];
 }
 
+bool A_Rnr::IsBlended(RnrDriver* rd)
+{
+  return rd->BlendingOn();
+}
+
 /**************************************************************************/
 
 void A_Rnr::crs_links(RnrDriver* rd, RnrScheme* sch)

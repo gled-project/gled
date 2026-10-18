@@ -7,6 +7,7 @@
 
 #include <RnrBase/RnrDriver.h>
 #include <Gled/GTime.h>
+#include <Stones/RadixSort.h>
 
 #include <GL/glew.h>
 
@@ -63,12 +64,24 @@ protected:
   GLUquadricObj *mQuadricStd;          // X{g}
   GLUquadricObj *mQuadricStdNoNormals; // X{g}
 
+  //--------------------------------
+
+  RadixSort<UInt_t, UInt_t> mBlendedRadix;
+  std::vector<UInt_t>       mBlendedKeys, mBlendedRanks, mBlendedIdx, mBlendedOrder;
+
+  // Selection has no blending or depth order, so blended draws are picked in place.
+  virtual bool can_defer() { return bDeferBlended && ! bInPicking && ! bInDLRebuild; }
+
+  void push_blended_frame(PMSEntry& pmse, ZNode* node, const ZTrans& gcs);
+  void draw_blended(const BlendedItem& it);
+
 public:
   GLRnrDriver(Eye* e, const TString& r);
   virtual ~GLRnrDriver();
 
   virtual void BeginRender();
   virtual void EndRender();
+  virtual void FlushBlended();
 
   // A ray in the camera-base frame that events use in place of the mouse's.
   void SetFixedMouseRay(const ZPoint& pos, const ZPoint& dir)
@@ -79,7 +92,7 @@ public:
 
   // Render times, printed every mStatsEvery renders when GLED_RNR_STATS gives it.
   Int_t         mStatsEvery, mStatsN;
-  Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts;
+  Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts, mStatsBlended;
   GTime         mStatsStart;
   virtual void  check_entry_frame(A_Rnr* rnr);
   virtual void  CheckCulled(const TString& what, const Float_t* ctr_ext);

@@ -12,6 +12,7 @@
 
 #include <TMath.h>
 
+#include <algorithm>
 #include <cstdlib>
 
 using namespace gled;
@@ -31,7 +32,7 @@ GLRnrDriver::GLRnrDriver(Eye* e, const TString& r) : RnrDriver(e, r)
   const char* stats = getenv("GLED_RNR_STATS");
   mStatsEvery = stats ? atoi(stats) : 0;
   mStatsN = 0;
-  mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = 0;
+  mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = 0;
 
   mMaxLamps = 8;
   mLamps = new A_Rnr* [mMaxLamps];
@@ -123,6 +124,8 @@ void GLRnrDriver::BeginRender()
 
 void GLRnrDriver::EndRender()
 {
+  if ( ! mBlended.empty()) FlushBlended();
+
   for(int l=0; l<mMaxLamps; ++l) {
     if(mLamps[l] != 0) {
       // std::cout <<"RnrDriver cleaning-up a dirty lamp ...\n";
@@ -152,14 +155,122 @@ void GLRnrDriver::EndRender()
     mStatsMax  = TMath::Max(mStatsMax, ms);
     mStatsCulled      += mCullCount;
     mStatsCulledParts += mCullPartCount;
+    mStatsBlended     += mBlendedCount;
     if (++mStatsN == mStatsEvery)
     {
-      printf("GLRnrDriver stats: %d renders, mean %.2f ms, max %.2f ms, mean culled %.1f lenses, %.1f parts\n",
-             mStatsN, mStatsSum / mStatsN, mStatsMax, mStatsCulled / mStatsN, mStatsCulledParts / mStatsN);
+      printf("GLRnrDriver stats: %d renders, mean %.2f ms, max %.2f ms, mean culled %.1f lenses, %.1f parts, mean blended %.1f\n",
+             mStatsN, mStatsSum / mStatsN, mStatsMax, mStatsCulled / mStatsN, mStatsCulledParts / mStatsN,
+             mStatsBlended / mStatsN);
       mStatsN = 0;
-      mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = 0;
+      mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = 0;
     }
   }
+}
+
+void GLRnrDriver::FlushBlended()
+{
+  // In-order draws first, in tree order; then the rest back to front by eye-space depth.
+  struct ClearGuard
+  {
+    GLRnrDriver *fRD;
+    ~ClearGuard() { fRD->clear_blended(); }
+  } _clear { this };
+
+  bDeferBlended = false;
+  const UInt_t n = mBlended.size();
+  if (n == 0) return;
+
+  mBlendedOrder.clear();
+  mBlendedKeys.clear();
+  mBlendedIdx.clear();
+  for (UInt_t i = 0; i < n; ++i)
+    if ( ! mBlended[i].bSorted) mBlendedOrder.push_back(i);
+  for (UInt_t i = 0; i < n; ++i)
+  {
+    const BlendedItem &it = mBlended[i];
+    if ( ! it.bSorted) continue;
+    const ZTrans  m = mViewAtBegin * it.fGCS;
+    const Float_t z = m.CM(2,0)*it.fCtr[0] + m.CM(2,1)*it.fCtr[1] + m.CM(2,2)*it.fCtr[2] + m.CM(2,3);
+    // Distance along the view is -z; map the float to a monotone key, inverted for descending.
+    union { Float_t f; UInt_t u; } d = { -z };
+    UInt_t key = (d.u & 0x80000000u) ? ~d.u : (d.u | 0x80000000u);
+    mBlendedKeys.push_back(~key);
+    mBlendedIdx.push_back(i);
+  }
+  // Both sorts are stable. The radix sort's fixed cost of its histograms made
+  // std::stable_sort faster below about 256 keys (measured, g++ -O2).
+  const UInt_t ns = mBlendedKeys.size();
+  if (ns >= 256)
+  {
+    mBlendedRadix.Sort(mBlendedKeys, mBlendedRanks);
+  }
+  else
+  {
+    mBlendedRanks.resize(ns);
+    for (UInt_t i = 0; i < ns; ++i) mBlendedRanks[i] = i;
+    std::stable_sort(mBlendedRanks.begin(), mBlendedRanks.end(),
+                     [this](UInt_t a, UInt_t b) { return mBlendedKeys[a] < mBlendedKeys[b]; });
+  }
+  for (UInt_t r : mBlendedRanks) mBlendedOrder.push_back(mBlendedIdx[r]);
+
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  for (UInt_t i : mBlendedOrder)
+    draw_blended(mBlended[i]);
+  glPopMatrix();
+}
+
+void GLRnrDriver::push_blended_frame(PMSEntry& pmse, ZNode* node, const ZTrans& gcs)
+{
+  pmse.fNode  = node;
+  pmse.fLocal = gcs;
+  pmse.bTo = pmse.bFrom = false;
+  PushPM(pmse);
+  pmse.fPrev = &mBotPMSE; // fLocal is already global.
+  glLoadMatrixd((mViewAtBegin * gcs).Array());
+}
+
+void GLRnrDriver::draw_blended(const BlendedItem& it)
+{
+  // Mods are replayed by their own calls, as GL state is not data. Depth writes are
+  // off unless a mod turns them on.
+  const Int_t nm = it.fModEnd - it.fModBeg;
+  if ((Int_t) mBlendedPMS.size() < nm + 1) mBlendedPMS.resize(nm + 1);
+
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+  glDepthMask(GL_FALSE);
+  glEnable(GL_NORMALIZE);
+
+  for (Int_t k = 0; k < nm; ++k)
+  {
+    const BlendedMod &m = mBlendedMods[it.fModBeg + k];
+    push_blended_frame(mBlendedPMS[k], m.fNode, m.fGCS);
+    if (mTraceFile) trace_op(m.fRnr, m.fKind == RnrOp::K_PreDraw ? "blended-pre" : "blended-mod");
+    GLensReadHolder _lck(m.fRnr->fImg->fLens);
+    if (m.fKind == RnrOp::K_PreDraw) m.fRnr->PreDraw(this);
+    else                             m.fRnr->Draw(this);
+  }
+  {
+    push_blended_frame(mBlendedPMS[nm], it.fNode, it.fGCS);
+    if (mTraceFile) trace_op(it.fRnr, "blended-draw");
+    GLensReadHolder _lck(it.fRnr->fImg->fLens);
+    it.fRnr->Draw(this);
+    PopPM();
+  }
+  for (Int_t k = nm - 1; k >= 0; --k)
+  {
+    const BlendedMod &m = mBlendedMods[it.fModBeg + k];
+    if (m.fKind == RnrOp::K_PreDraw)
+    {
+      glLoadMatrixd((mViewAtBegin * m.fGCS).Array());
+      if (mTraceFile) trace_op(m.fRnr, "blended-post");
+      GLensReadHolder _lck(m.fRnr->fImg->fLens);
+      m.fRnr->PostDraw(this);
+    }
+    PopPM();
+  }
+
+  glPopAttrib();
 }
 
 void GLRnrDriver::check_entry_frame(A_Rnr* rnr)

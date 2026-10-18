@@ -768,6 +768,16 @@ void Pupil::Render(bool rnr_self, bool rnr_overlay)
       mDriver->SetMaxDepth(mInfo->GetMaxRnrDepth());
     }
   }
+  // The blended pass belongs to the scene; the overlay draws in place.
+  try
+  {
+    mDriver->FlushBlended();
+  }
+  catch(Exc_t &exc)
+  {
+    std::cout << _eh << "blended pass exception: '" << exc << "'.\n";
+    gl_depths.Restore(mDriver);
+  }
   if (bShowOverlay && rnr_overlay && mOverlayImg)
   {
     try

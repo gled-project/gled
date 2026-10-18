@@ -308,15 +308,20 @@ namespace
     WSSeed*                 line;      // the centre line the cart rides
     Double_t                lap;       // seconds
     ZGlLightModel*          sky_mod;   // unlit, both faces filled
+    ZNode*                  mods;      // mods used through links, not drawn in place
     ZNode                  *car, *seat;
   };
 
   // The sun as a lamp, low in the south-west for long shadows, far enough
   // to light like a directional one; and the sky, a sphere with a gradient
-  // seen from inside, within the headset's far plane of 1000 m.
+  // seen from inside, within the headset's far plane of 1000 m. The sky is
+  // drawn first in the blended pass, behind everything blended.
   void coaster_sky(Coaster& C)
   {
     const Double_t m = C.m;
+    CREATE_ADD_GLASS(mods, ZNode, C.scene, "SkyMods", 0);
+    mods->SetRnrElements(false);
+    C.mods = mods;
     const ZPoint lamp = coaster_centre + C.sun_dir * 2000.0;
     CREATE_ADD_GLASS(sun, Lamp, C.scene, "Sun", 0);
     sun->SetPos(lamp.x*m, lamp.y*m, lamp.z*m);
@@ -343,7 +348,11 @@ namespace
     sky->SetScale(600*m);
     sky->SetTLevel(24); sky->SetPLevel(48);
     sky->SetTexture(sky_img);
-    sky->SetRnrMod(sky_mod);
+    CREATE_ADD_GLASS(sky_pass, ZGlBlending, mods, "SkyPass", 0);
+    sky_pass->SetBlendOp(ZRnrModBase::O_On);
+    sky_pass->SetBlendPass(ZGlBlending::BP_InOrder);
+    sky->MakeRnrModList(sky_mod);
+    sky->MakeRnrModList(sky_pass);
   }
 
   // The centre line the cart rides, hidden, with its points banked; the
@@ -608,24 +617,49 @@ namespace
     C.seat = seat;
   }
 
-  // The sun's disc where the light comes from, with a glow, and the clouds;
-  // added last and writing no depth, as gled has no pass that draws blended
-  // things after the rest.
+  // The sun's disc where the light comes from, with a glow, and the clouds.
+  // The disc and the glow sit among the clouds but stand for the sun far
+  // away, so they are drawn in order after the sky, without depth writes; the
+  // clouds follow, back to front. The light models' shade-model op turns
+  // depth writes on, which the opaque cumuli keep and the translucent clouds
+  // turn off again. The clouds are lit like the cart, the cumuli with more
+  // ambient light for the light they scatter.
   void coaster_sun_and_clouds(Coaster& C)
   {
     const Double_t m = C.m;
-    CREATE_ADD_GLASS(blend, ZGlBlending, C.scene, "SkyBlending", 0);
+    CREATE_ADD_GLASS(blend, ZGlBlending, C.mods, "SkyBlending", 0);
     blend->SetBlendOp(ZRnrModBase::O_On);
+    blend->SetBlendPass(ZGlBlending::BP_BackToFront);
     blend->SetDepthMaskOp(ZRnrModBase::O_Off);
+    CREATE_ADD_GLASS(cloud_mod, ZGlLightModel, C.mods, "CloudLightModel", 0);
+    cloud_mod->SetLightModelOp(ZRnrModBase::O_On);
+    cloud_mod->SetLiMoTwoSide(true);
+    cloud_mod->SetShadeModelOp(ZRnrModBase::O_On);
+    cloud_mod->SetFaceCullOp(ZRnrModBase::O_Off);
+    CREATE_ADD_GLASS(cumulus_pass, ZGlBlending, C.mods, "CumulusPass", 0);
+    cumulus_pass->SetBlendOp(ZRnrModBase::O_On);
+    cumulus_pass->SetBlendPass(ZGlBlending::BP_BackToFront);
+    CREATE_ADD_GLASS(cumulus_mod, ZGlLightModel, C.mods, "CumulusLightModel", 0);
+    cumulus_mod->SetLightModelOp(ZRnrModBase::O_On);
+    cumulus_mod->SetLiMoAmbient(0.55, 0.55, 0.6);
+    cumulus_mod->SetLiMoTwoSide(true);
+    cumulus_mod->SetShadeModelOp(ZRnrModBase::O_On);
+    cumulus_mod->SetFaceCullOp(ZRnrModBase::O_Off);
     const ZPoint sun_at = coaster_centre + C.sun_dir * 560.0;
     CREATE_ADD_GLASS(sun_disc, SMorph, C.scene, "SunDisc", 0);
     sun_disc->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
     sun_disc->SetScale(18*m);
     sun_disc->SetTLevel(16); sun_disc->SetPLevel(24);
     sun_disc->SetColor(1, 0.97, 0.88);
-    sun_disc->SetRnrMod(C.sky_mod);
-    CREATE_ADD_GLASS(glow, ZGlBlending, C.scene, "SunGlow", 0);
+    CREATE_ADD_GLASS(sun_pass, ZGlBlending, C.mods, "SunPass", 0);
+    sun_pass->SetBlendOp(ZRnrModBase::O_On);
+    sun_pass->SetBlendPass(ZGlBlending::BP_InOrder);
+    sun_pass->SetDepthMaskOp(ZRnrModBase::O_Off);
+    sun_disc->MakeRnrModList(C.sky_mod);
+    sun_disc->MakeRnrModList(sun_pass);
+    CREATE_ADD_GLASS(glow, ZGlBlending, C.mods, "SunGlow", 0);
     glow->SetBlendOp(ZRnrModBase::O_On);
+    glow->SetBlendPass(ZGlBlending::BP_InOrder);
     glow->SetBDstFac(GL_ONE);
     glow->SetDepthMaskOp(ZRnrModBase::O_Off);
     // Faint additive layers, so the glow fades outwards instead of saturating.
@@ -641,8 +675,11 @@ namespace
     }
 
     CREATE_ADD_GLASS(cumuli, ZNode, C.scene, "Cumuli", 0);
+    cumuli->MakeRnrModList(cumulus_mod);
+    cumuli->MakeRnrModList(cumulus_pass);
     CREATE_ADD_GLASS(altocumuli, ZNode, C.scene, "Altocumuli", 0);
-    altocumuli->SetRnrMod(blend);
+    altocumuli->MakeRnrModList(cloud_mod);
+    altocumuli->MakeRnrModList(blend);
     CREATE_ADD_GLASS(cirri, ZNode, C.scene, "Cirri", 0);
     cirri->MakeRnrModList(C.sky_mod);
     cirri->MakeRnrModList(blend);
@@ -679,10 +716,10 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   g_scene = C.scene;
 
   coaster_sky(C);
+  coaster_sun_and_clouds(C);
   coaster_track(C);
   coaster_ground(C);
   coaster_cart(C);
-  coaster_sun_and_clouds(C);
 
   CREATE_ADD_GLASS(etor, Eventor, C.scene, "Eventor", 0);
   etor->SetInterBeatMS(gSystem->Getenv("GLED_XR") ? 11 : 20);
