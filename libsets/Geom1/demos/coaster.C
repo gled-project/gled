@@ -22,6 +22,8 @@
 #include "sun_demos.C"
 #include "eye.C"
 
+#include <TRandom3.h>
+
 #include <vector>
 
 using namespace gled;
@@ -205,6 +207,61 @@ namespace
     }
   };
 
+  // Cloud puffs in metres: cumulus 0, altocumulus 1, cirrus 2.
+  struct Puff { ZPoint c; Double_t rx, ry, rz, yaw; Int_t kind; };
+
+  std::vector<Puff> coaster_clouds()
+  {
+    TRandom3 rnd(17);
+    std::vector<Puff> pv;
+    const Double_t wind = 30 * TMath::DegToRad();
+    const ZPoint along(std::cos(wind), std::sin(wind), 0), across(-std::sin(wind), std::cos(wind), 0);
+
+    // Cumuli: heaps over a flat base, highest in the middle.
+    for (int k = 0; k < 9; ++k)
+    {
+      const ZPoint c(rnd.Uniform(-140, 260), rnd.Uniform(-160, 200), rnd.Uniform(140, 170));
+      const Double_t R = rnd.Uniform(14, 24);
+      const int np = 7 + rnd.Integer(5);
+      for (int j = 0; j < np; ++j)
+      {
+        const Double_t dx = rnd.Gaus(0, 0.6 * R), dy = rnd.Gaus(0, 0.6 * R);
+        const Double_t r  = R * rnd.Uniform(0.45, 0.8) * (1 - 0.3 * TMath::Min(1.0, std::hypot(dx, dy) / R));
+        const Double_t up = 0.8 * R * std::exp(-(dx * dx + dy * dy) / (R * R)) * rnd.Uniform(0.3, 1);
+        pv.push_back({ ZPoint(c.x + dx, c.y + dy, c.z + 0.6 * r + up), r, r, 0.8 * r, 0, 0 });
+      }
+    }
+    // Altocumuli: patches of small flat puffs in rows across the wind.
+    for (int k = 0; k < 3; ++k)
+    {
+      const ZPoint c(rnd.Uniform(-120, 240), rnd.Uniform(-150, 190), rnd.Uniform(260, 300));
+      for (int i = -3; i <= 3; ++i)
+        for (int j = -3; j <= 3; ++j)
+        {
+          if (rnd.Uniform() < 0.25 || i*i + j*j > 12) continue;
+          const ZPoint q = c + along * (18.0 * i + rnd.Uniform(-4, 4)) + across * (14.0 * j + rnd.Uniform(-4, 4));
+          const Double_t r = rnd.Uniform(5, 8);
+          pv.push_back({ ZPoint(q.x, q.y, q.z + rnd.Uniform(-3, 3)), r, 0.8 * r, 2.5, wind, 1 });
+        }
+    }
+    // Cirri: faint wisps along the wind, overlapping, bending slightly.
+    for (int k = 0; k < 14; ++k)
+    {
+      ZPoint q(rnd.Uniform(-180, 300), rnd.Uniform(-200, 240), rnd.Uniform(420, 480));
+      Double_t yaw = wind + rnd.Gaus(0, 0.15);
+      const int ns = 8 + rnd.Integer(8);
+      for (int j = 0; j < ns; ++j)
+      {
+        const Double_t len = rnd.Uniform(18, 30);
+        const ZPoint side = ZPoint(-std::sin(yaw), std::cos(yaw), 0) * rnd.Gaus(0, 4);
+        pv.push_back({ q + side, len, rnd.Uniform(6, 12), 1, yaw + rnd.Gaus(0, 0.1), 2 });
+        yaw += rnd.Gaus(0, 0.06);
+        q += ZPoint(std::cos(yaw), std::sin(yaw), 0) * (0.8 * len);
+      }
+    }
+    return pv;
+  }
+
   WSSeed* rail_seed(ZNode* parent, const char* name, Float_t radius, const ZColor& col)
   {
     WSSeed* s = new WSSeed(name);
@@ -247,6 +304,8 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   const Double_t sun_el = 35 * TMath::DegToRad(), sun_az = 220 * TMath::DegToRad();
   const ZPoint sun_dir(std::cos(sun_el) * std::cos(sun_az), std::cos(sun_el) * std::sin(sun_az),
                        std::sin(sun_el));
+  const std::vector<Puff> clouds = coaster_clouds();
+
   CREATE_ADD_GLASS(sun, Lamp, scene, "Sun", 0);
   sun->SetPos((60 + 2000 * sun_dir.x)*m, (20 + 2000 * sun_dir.y)*m, 2000 * sun_dir.z * m);
   sun->SetDiffuse(1, 0.95, 0.85);
@@ -439,7 +498,7 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
                          + ay * ((1 - ax) * lit[(iy + 1) * nc + ix] + ax * lit[(iy + 1) * nc + ix + 1]);
         lm[r * nl + a] = UChar_t(255 * v);
       }
-    auto stamp = [&](const ZPoint& p, Double_t radius) {
+    auto stamp = [&](const ZPoint& p, Double_t radius, Double_t dark) {
       Double_t t = 0;
       for (int k = 0; k < 4; ++k) t = (p.z - hg.at(p.x - t * sun_dir.x, p.y - t * sun_dir.y)) / sun_dir.z;
       int a0, r0;
@@ -448,15 +507,17 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
       for (int r = r0 - rt; r <= r0 + rt; ++r)
         for (int a = a0 - rt; a <= a0 + rt; ++a)
           if (a >= 0 && a < nl && r >= 0 && r < nl && (a - a0) * (a - a0) + (r - r0) * (r - r0) <= rt * rt)
-            lm[r * nl + a] = TMath::Min(lm[r * nl + a], UChar_t(255 * shade));
+            lm[r * nl + a] = TMath::Min(lm[r * nl + a], UChar_t(255 * dark));
     };
     for (int k = 0; k < n; ++k)
     {
       const ZPoint &p = tp[k].pos, &q = tp[(k + 1) % n].pos;
-      for (int j = 0; j < 7; ++j) stamp(p + (q - p) * (j / 7.0), 0.75);
+      for (int j = 0; j < 7; ++j) stamp(p + (q - p) * (j / 7.0), 0.75, shade);
       if (k % 5 == 0 && p.z > 3 && tp[k].z.z > 0.5)
-        for (Double_t z = 0.5; z < p.z; z += 0.3) stamp(ZPoint(p.x, p.y, z), 0.2);
+        for (Double_t z = 0.5; z < p.z; z += 0.3) stamp(ZPoint(p.x, p.y, z), 0.2, shade);
     }
+    for (const Puff& c : clouds)
+      if (c.kind == 0) stamp(c.c, 0.9 * c.rx, 0.72);
     const TString pgm = GForm("%s/coaster_light_%d.pgm", gSystem->TempDirectory(), gSystem->GetPid());
     fp = fopen(pgm.Data(), "wb");
     fprintf(fp, "P5\n%d %d\n255\n", nl, nl);
@@ -514,6 +575,53 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
   body->SetRnrMod(cart_mod);
   CREATE_ADD_GLASS(seat, ZNode, car, "Seat", 0);
   seat->SetPos(-0.2*m, 0, 1.25*m);
+
+  // The sun's disc where the light comes from, with a halo, and the clouds;
+  // drawn last, as the halo and the higher clouds are blended.
+  CREATE_ADD_GLASS(blend, ZGlBlending, scene, "SkyBlending", 0);
+  blend->SetBlendOp(ZRnrModBase::O_On);
+  blend->SetDepthMaskOp(ZRnrModBase::O_Off);
+  const ZPoint sun_at = ZPoint(60, 20, 0) + sun_dir * 560.0;
+  CREATE_ADD_GLASS(sun_disc, SMorph, scene, "SunDisc", 0);
+  sun_disc->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
+  sun_disc->SetScale(18*m);
+  sun_disc->SetTLevel(16); sun_disc->SetPLevel(24);
+  sun_disc->SetColor(1, 0.97, 0.88);
+  sun_disc->SetRnrMod(sky_mod);
+  CREATE_ADD_GLASS(glow, ZGlBlending, scene, "SunGlow", 0);
+  glow->SetBlendOp(ZRnrModBase::O_On);
+  glow->SetBDstFac(GL_ONE);
+  glow->SetDepthMaskOp(ZRnrModBase::O_Off);
+  // Faint additive layers, so the glow fades outwards instead of saturating.
+  for (Double_t r : { 30.0, 50.0, 80.0 })
+  {
+    CREATE_ADD_GLASS(halo, SMorph, scene, "SunHalo", 0);
+    halo->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
+    halo->SetScale(r*m);
+    halo->SetTLevel(16); halo->SetPLevel(24);
+    halo->SetColor(1, 0.9, 0.7, 0.07);
+    halo->MakeRnrModList(sky_mod);
+    halo->MakeRnrModList(glow);
+  }
+
+  CREATE_ADD_GLASS(cumuli, ZNode, scene, "Cumuli", 0);
+  CREATE_ADD_GLASS(altocumuli, ZNode, scene, "Altocumuli", 0);
+  altocumuli->SetRnrMod(blend);
+  CREATE_ADD_GLASS(cirri, ZNode, scene, "Cirri", 0);
+  cirri->MakeRnrModList(sky_mod);
+  cirri->MakeRnrModList(blend);
+  ZNode* cloud_dirs[3] = { cumuli, altocumuli, cirri };
+  const ZColor cloud_cols[3] = { ZColor(1, 1, 1), ZColor(0.97, 0.97, 1, 0.85), ZColor(1, 1, 1, 0.16) };
+  for (const Puff& c : clouds)
+  {
+    CREATE_ADD_GLASS(puff, SMorph, cloud_dirs[c.kind], "Puff", 0);
+    puff->SetPos(c.c.x*m, c.c.y*m, c.c.z*m);
+    puff->RotateLF(1, 2, c.yaw);
+    puff->SetScales(c.rx*m, c.ry*m, c.rz*m);
+    puff->SetTLevel(c.kind == 2 ? 6 : 8); puff->SetPLevel(c.kind == 2 ? 8 : 12);
+    const ZColor& col = cloud_cols[c.kind];
+    puff->SetColor(col.r(), col.g(), col.b(), col.a());
+  }
 
   CREATE_ADD_GLASS(etor, Eventor, scene, "Eventor", 0);
   etor->SetInterBeatMS(gSystem->Getenv("GLED_XR") ? 11 : 20);
