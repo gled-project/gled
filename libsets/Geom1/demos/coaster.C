@@ -1,6 +1,7 @@
 // A roller coaster to ride in a headset: a closed track with a chain lift, a
-// drop, a vertical loop, a banked turn and a helix, under a sky, in a tropical
-// saddle between hills, with crater lakes, a sea in the valleys, and shadows.
+// drop, a vertical loop, a banked turn and a helix, in a tropical saddle
+// between hills, with crater lakes, a sea at the valley ends, shadows, a sun
+// and three kinds of clouds.
 //
 // The track's centre line is a centripetal Catmull-Rom spline through key
 // points, resampled into WSPoints about 2 m apart. Each segment takes the
@@ -8,7 +9,10 @@
 // after the crest, braked down on the way back. The points are banked so the
 // felt force, acceleration minus gravity, presses into the seat. The cart
 // rides with the up from the points; with flight, WSWalker banks it by the
-// felt force as it goes instead.
+// felt force as it goes instead. The seat is the pupil's camera base.
+//
+// Everything is laid out in metres around the middle of the ride and scaled
+// by mpu into gled units.
 //
 // mpu:    metres per gled unit, as GLED_XR_SCALE (0.2 by default).
 // flight: bank by WSWalker's flight mode instead of the points.
@@ -30,6 +34,8 @@ using namespace gled;
 
 namespace
 {
+  const ZPoint coaster_centre(60, 20, 0);   // the middle of the ride, in metres
+
   struct CoasterKey { Double_t x, y, z; char sec; }; // sec: c chain, f free, b brake
 
   // The track in metres, z up, closed: the last key leads back to the first.
@@ -77,7 +83,7 @@ namespace
   }
 
   // The closed centre line, every ds metres, with tangents, sections and speeds.
-  std::vector<TrackPoint> coaster_track(Double_t ds, Double_t g)
+  std::vector<TrackPoint> coaster_centre_line(Double_t ds, Double_t g)
   {
     const int nk = sizeof(coaster_keys) / sizeof(coaster_keys[0]);
     auto key = [&](int i) { const CoasterKey& k = coaster_keys[(i % nk + nk) % nk];
@@ -157,7 +163,7 @@ namespace
   // track and valleys along it, bumps, and the craters' bowls and rims.
   Double_t coaster_land(Double_t x, Double_t y)
   {
-    const Double_t u = (x - 60) / 180, v = (y - 20) / 140;
+    const Double_t u = (x - coaster_centre.x) / 180, v = (y - coaster_centre.y) / 140;
     Double_t h = 40 * v * v - 18 * u * u + 6 * std::sin(x / 41) * std::cos(y / 33)
                + 4 * std::sin((x + 2 * y) / 57) + 2.5 * std::sin(x / 13 + y / 17);
     for (const Crater& c : coaster_craters)
@@ -262,6 +268,12 @@ namespace
     return pv;
   }
 
+  // Pillars stand under every fifth point that is high and upright.
+  bool coaster_pillar(const std::vector<TrackPoint>& tp, int k)
+  {
+    return k % 5 == 0 && tp[k].pos.z > 3 && tp[k].z.z > 0.5;
+  }
+
   WSSeed* rail_seed(ZNode* parent, const char* name, Float_t radius, const ZColor& col)
   {
     WSSeed* s = new WSSeed(name);
@@ -284,152 +296,166 @@ namespace
     g_queen->CheckIn(p);
     s->Add(p);
   }
-}
 
-void coaster(Double_t mpu=0.2, Bool_t flight=false)
-{
-  ASSERT_MACRO(sun_demos);
-  Gled::theOne->AssertLibSet("Geom1");
-
-  const Double_t m = 1 / mpu;            // gled units per metre
-  const Double_t g = 9.81;
-
-  Scene* scene = new Scene("Coaster Scene");
-  g_queen->CheckIn(scene);
-  g_queen->Add(scene);
-  g_scene = scene;
-
-  // Light, sky and ground.
-  // A low sun from the south-west, for long shadows.
-  const Double_t sun_el = 35 * TMath::DegToRad(), sun_az = 220 * TMath::DegToRad();
-  const ZPoint sun_dir(std::cos(sun_el) * std::cos(sun_az), std::cos(sun_el) * std::sin(sun_az),
-                       std::sin(sun_el));
-  const std::vector<Puff> clouds = coaster_clouds();
-
-  CREATE_ADD_GLASS(sun, Lamp, scene, "Sun", 0);
-  sun->SetPos((60 + 2000 * sun_dir.x)*m, (20 + 2000 * sun_dir.y)*m, 2000 * sun_dir.z * m);
-  sun->SetDiffuse(1, 0.95, 0.85);
-  sun->SetAmbient(0.35, 0.35, 0.4);
-  sun->SetLampScale(0);
-  scene->GetGlobLamps()->Add(sun);
-
-  CREATE_ADD_GLASS(sky_img, ZImage, scene, "SkyGradient", 0);
-  sky_img->SetFile("sky_gradient.png");
-  sky_img->Load();
-  sky_img->SetEnvMode(GL_REPLACE);
-  sky_img->SetMagFilter(GL_LINEAR);
-  sky_img->SetMinFilter(GL_LINEAR);
-
-  // Unlit, seen from inside, around the whole ride and inside the headset's
-  // far plane of 1000 m.
-  CREATE_ADD_GLASS(sky_mod, ZGlLightModel, scene, "SkyLightModel", 0);
-  sky_mod->SetLightModelOp(ZRnrModBase::O_Off);
-  sky_mod->SetFaceCullOp(ZRnrModBase::O_Off);
-  sky_mod->SetShadeModelOp(ZRnrModBase::O_On);  // filled back faces too
-  CREATE_ADD_GLASS(sky, SMorph, scene, "Sky", 0);
-  sky->SetPos(60*m, 20*m, 0);
-  sky->RotateLF(1, 3, TMath::PiOver2());
-  sky->SetScale(600*m);
-  sky->SetTLevel(24); sky->SetPLevel(48);
-  sky->SetTexture(sky_img);
-  sky->SetRnrMod(sky_mod);
-
-  // The track: the centre line the cart rides, hidden, and what is drawn.
-  std::vector<TrackPoint> tp = coaster_track(2, g);
-  const int n = tp.size();
-
-  CREATE_ADD_GLASS(line, WSSeed, scene, "CentreLine", 0);
-  line->SetRnrSelf(false);
-  line->SetRnrElements(false);
-  line->SetUpFromPoints(true);
-  for (int i = 0; i <= n; ++i)
+  // What the parts of the scene share.
+  struct Coaster
   {
-    const TrackPoint& p = tp[i % n];
-    ZPoint z(0, 0, 1);
-    z -= p.x * z.Dot(p.x);
-    z.Normalize();
-    add_point(line, frame(p.pos * m, p.x, z), 0.1, i < n ? p.dt : 1);
+    Scene*                  scene;
+    Double_t                m, g;      // gled units per metre, gravity in m/s^2
+    ZPoint                  sun_dir;   // towards the sun
+    std::vector<Puff>       clouds;
+    std::vector<TrackPoint> tp;
+    WSSeed*                 line;      // the centre line the cart rides
+    Double_t                lap;       // seconds
+    ZGlLightModel*          sky_mod;   // unlit, both faces filled
+    ZNode                  *car, *seat;
+  };
+
+  // The sun as a lamp, low in the south-west for long shadows, far enough
+  // to light like a directional one; and the sky, a sphere with a gradient
+  // seen from inside, within the headset's far plane of 1000 m.
+  void coaster_sky(Coaster& C)
+  {
+    const Double_t m = C.m;
+    const ZPoint lamp = coaster_centre + C.sun_dir * 2000.0;
+    CREATE_ADD_GLASS(sun, Lamp, C.scene, "Sun", 0);
+    sun->SetPos(lamp.x*m, lamp.y*m, lamp.z*m);
+    sun->SetDiffuse(1, 0.95, 0.85);
+    sun->SetAmbient(0.35, 0.35, 0.4);
+    sun->SetLampScale(0);
+    C.scene->GetGlobLamps()->Add(sun);
+
+    CREATE_ADD_GLASS(sky_img, ZImage, C.scene, "SkyGradient", 0);
+    sky_img->SetFile("sky_gradient.png");
+    sky_img->Load();
+    sky_img->SetEnvMode(GL_REPLACE);
+    sky_img->SetMagFilter(GL_LINEAR);
+    sky_img->SetMinFilter(GL_LINEAR);
+
+    CREATE_ADD_GLASS(sky_mod, ZGlLightModel, C.scene, "SkyLightModel", 0);
+    sky_mod->SetLightModelOp(ZRnrModBase::O_Off);
+    sky_mod->SetFaceCullOp(ZRnrModBase::O_Off);
+    sky_mod->SetShadeModelOp(ZRnrModBase::O_On);  // the pupil draws back faces as lines
+    C.sky_mod = sky_mod;
+    CREATE_ADD_GLASS(sky, SMorph, C.scene, "Sky", 0);
+    sky->SetPos(coaster_centre.x*m, coaster_centre.y*m, 0);
+    sky->RotateLF(1, 3, TMath::PiOver2());
+    sky->SetScale(600*m);
+    sky->SetTLevel(24); sky->SetPLevel(48);
+    sky->SetTexture(sky_img);
+    sky->SetRnrMod(sky_mod);
   }
 
-  // Banking: the felt force a - g, normal to the tangent, from the centre
-  // line's own motion, averaged across each point. Where it is weak or pulls
-  // out of the seat, as over a crest, the bank stays: airtime, not a roll.
-  std::vector<ZPoint> up(n);
-  Double_t time = 0;
-  for (int i = 0; i < n; ++i)
+  // The centre line the cart rides, hidden, with its points banked; the
+  // rails, spine, ties and pillars drawn from the banked frames.
+  void coaster_track(Coaster& C)
   {
-    ZPoint pos, vel, a1, a2;
-    line->MotionAtTime(TMath::Max(0.0, time - 1e-4), pos, vel, a1);
-    line->MotionAtTime(time + 1e-4, pos, vel, a2);
-    ZPoint f = (a1 + a2) * (0.5 / m);
-    f.z += g;
-    f -= tp[i].x * f.Dot(tp[i].x);
-    ZPoint prev = i ? up[i - 1] : ZPoint(0, 0, 1);
-    prev -= tp[i].x * prev.Dot(tp[i].x);
-    prev.Normalize();
-    up[i] = f.Dot(prev) > 0.3 * g ? f * (1 / f.Mag()) : prev;
-    time += tp[i].dt;
-  }
-  for (int pass = 0; pass < 3; ++pass)
-  {
-    std::vector<ZPoint> s(n);
+    const Double_t m = C.m, g = C.g;
+    std::vector<TrackPoint> &tp = C.tp;
+    tp = coaster_centre_line(2, g);
+    const int n = tp.size();
+
+    CREATE_ADD_GLASS(line, WSSeed, C.scene, "CentreLine", 0);
+    line->SetRnrSelf(false);
+    line->SetRnrElements(false);
+    line->SetUpFromPoints(true);
+    C.line = line;
+    for (int i = 0; i <= n; ++i)
+    {
+      const TrackPoint& p = tp[i % n];
+      ZPoint z(0, 0, 1);
+      z -= p.x * z.Dot(p.x);
+      z.Normalize();
+      add_point(line, frame(p.pos * m, p.x, z), 0.1, i < n ? p.dt : 1);
+    }
+
+    // Banking: the felt force a - g, normal to the tangent, from the centre
+    // line's own motion, averaged across each point. Where it is weak or pulls
+    // out of the seat, as over a crest, the bank stays: airtime, not a roll.
+    std::vector<ZPoint> up(n);
+    Double_t time = 0;
     for (int i = 0; i < n; ++i)
     {
-      s[i] = up[(i - 1 + n) % n] + up[i] * 2.0 + up[(i + 1) % n];
-      s[i] -= tp[i].x * s[i].Dot(tp[i].x);
-      s[i].Normalize();
+      ZPoint pos, vel, a1, a2;
+      line->MotionAtTime(TMath::Max(0.0, time - 1e-4), pos, vel, a1);
+      line->MotionAtTime(time + 1e-4, pos, vel, a2);
+      ZPoint f = (a1 + a2) * (0.5 / m);
+      f.z += g;
+      f -= tp[i].x * f.Dot(tp[i].x);
+      ZPoint prev = i ? up[i - 1] : ZPoint(0, 0, 1);
+      prev -= tp[i].x * prev.Dot(tp[i].x);
+      prev.Normalize();
+      up[i] = f.Dot(prev) > 0.3 * g ? f * (1 / f.Mag()) : prev;
+      time += tp[i].dt;
     }
-    up = s;
-  }
-  for (int i = 0; i < n; ++i) tp[i].z = up[i];
-
-  int i = 0;
-  for (auto it = line->begin(); it != line->end(); ++it, ++i)
-  {
-    WSPoint* p = dynamic_cast<WSPoint*>(it->fLens);
-    if (p) p->SetTrans(frame(tp[i % n].pos * m, tp[i % n].x, tp[i % n].z));
-  }
-
-  ZColor steel(0.75, 0.75, 0.8), red(0.8, 0.15, 0.1);
-  WSSeed* rail_l = rail_seed(scene, "RailLeft",  0.06*m, steel);
-  WSSeed* rail_r = rail_seed(scene, "RailRight", 0.06*m, steel);
-  WSSeed* spine  = rail_seed(scene, "Spine",     0.18*m, red);
-  for (int k = 0; k <= n; ++k)
-  {
-    const TrackPoint& p = tp[k % n];
-    const ZPoint y = p.z.Cross(p.x);
-    add_point(rail_l, frame((p.pos + y * 0.6) * m, p.x, p.z), 0.06*m, 1);
-    add_point(rail_r, frame((p.pos - y * 0.6) * m, p.x, p.z), 0.06*m, 1);
-    add_point(spine,  frame((p.pos - p.z * 0.35) * m, p.x, p.z), 0.18*m, 1);
-  }
-
-  CREATE_ADD_GLASS(ties, ZNode, scene, "Ties", 0);
-  CREATE_ADD_GLASS(pillars, ZNode, scene, "Pillars", 0);
-  for (int k = 0; k < n; ++k)
-  {
-    const TrackPoint& p = tp[k];
-    if (k % 2 == 0)
+    C.lap = time;
+    for (int pass = 0; pass < 3; ++pass)
     {
-      CREATE_ADD_GLASS(tie, Box, ties, GForm("Tie %d", k), 0);
-      tie->SetTrans(frame((p.pos - p.z * 0.2) * m, p.x, p.z));
-      tie->SetABC(0.25*m, 1.4*m, 0.12*m);
-      tie->SetColor(0.3, 0.3, 0.35);
+      std::vector<ZPoint> s(n);
+      for (int i = 0; i < n; ++i)
+      {
+        s[i] = up[(i - 1 + n) % n] + up[i] * 2.0 + up[(i + 1) % n];
+        s[i] -= tp[i].x * s[i].Dot(tp[i].x);
+        s[i].Normalize();
+      }
+      up = s;
     }
-    if (k % 5 == 0 && p.pos.z > 3 && p.z.z > 0.5)
+    for (int i = 0; i < n; ++i) tp[i].z = up[i];
+
+    int k = 0;
+    for (auto it = line->begin(); it != line->end(); ++it, ++k)
     {
-      const Double_t h = p.pos.z - 0.5;
-      CREATE_ADD_GLASS(pil, Box, pillars, GForm("Pillar %d", k), 0);
-      pil->SetPos(p.pos.x*m, p.pos.y*m, 0.5*h*m);
-      pil->SetABC(0.4*m, 0.4*m, h*m);
-      pil->SetColor(0.85, 0.85, 0.8);
+      WSPoint* p = dynamic_cast<WSPoint*>(it->fLens);
+      if (p) p->SetTrans(frame(tp[k % n].pos * m, tp[k % n].x, tp[k % n].z));
+    }
+
+    const ZColor steel(0.75, 0.75, 0.8), red(0.8, 0.15, 0.1);
+    WSSeed* rail_l = rail_seed(C.scene, "RailLeft",  0.06*m, steel);
+    WSSeed* rail_r = rail_seed(C.scene, "RailRight", 0.06*m, steel);
+    WSSeed* spine  = rail_seed(C.scene, "Spine",     0.18*m, red);
+    for (int k = 0; k <= n; ++k)
+    {
+      const TrackPoint& p = tp[k % n];
+      const ZPoint y = p.z.Cross(p.x);
+      add_point(rail_l, frame((p.pos + y * 0.6) * m, p.x, p.z), 0.06*m, 1);
+      add_point(rail_r, frame((p.pos - y * 0.6) * m, p.x, p.z), 0.06*m, 1);
+      add_point(spine,  frame((p.pos - p.z * 0.35) * m, p.x, p.z), 0.18*m, 1);
+    }
+
+    CREATE_ADD_GLASS(ties, ZNode, C.scene, "Ties", 0);
+    CREATE_ADD_GLASS(pillars, ZNode, C.scene, "Pillars", 0);
+    for (int k = 0; k < n; ++k)
+    {
+      const TrackPoint& p = tp[k];
+      if (k % 2 == 0)
+      {
+        CREATE_ADD_GLASS(tie, Box, ties, GForm("Tie %d", k), 0);
+        tie->SetTrans(frame((p.pos - p.z * 0.2) * m, p.x, p.z));
+        tie->SetABC(0.25*m, 1.4*m, 0.12*m);
+        tie->SetColor(0.3, 0.3, 0.35);
+      }
+      if (coaster_pillar(tp, k))
+      {
+        const Double_t h = p.pos.z - 0.5;
+        CREATE_ADD_GLASS(pil, Box, pillars, GForm("Pillar %d", k), 0);
+        pil->SetPos(p.pos.x*m, p.pos.y*m, 0.5*h*m);
+        pil->SetABC(0.4*m, 0.4*m, h*m);
+        pil->SetColor(0.85, 0.85, 0.8);
+      }
     }
   }
 
   // The ground, 400 m square in cells of 2 m, coloured by height, with a
-  // light map of the hills' own shadows and those of the track and pillars.
+  // light map of the hills' own shadows and those of the track, pillars and
+  // cumuli; and the crater lakes.
+  void coaster_ground(Coaster& C)
   {
+    const Double_t m = C.m;
+    const ZPoint& sun_dir = C.sun_dir;
+    const std::vector<TrackPoint>& tp = C.tp;
+    const int n = tp.size();
     HeightGrid hg;
-    hg.nc = 201; hg.dc = 2; hg.x0 = 60 - 200; hg.y0 = 20 - 200;
+    hg.nc = 201; hg.dc = 2; hg.x0 = coaster_centre.x - 200; hg.y0 = coaster_centre.y - 200;
     const int nc = hg.nc;
     hg.h.resize(nc * nc);
     for (int iy = 0; iy < nc; ++iy)
@@ -465,7 +491,7 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
               TMath::Max(0.0, TMath::Min(1.0, (b.h - h_min) / (h_max - h_min))), b.r, b.g, b.b);
     fprintf(fp, "}\n");
     fclose(fp);
-    CREATE_ADD_GLASS(palette, RGBAPalette, scene, "Tropical", 0);
+    CREATE_ADD_GLASS(palette, RGBAPalette, C.scene, "Tropical", 0);
     palette->SetMarksFromPOVFile(pov.Data());
     gSystem->Unlink(pov.Data());
 
@@ -513,17 +539,17 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     {
       const ZPoint &p = tp[k].pos, &q = tp[(k + 1) % n].pos;
       for (int j = 0; j < 7; ++j) stamp(p + (q - p) * (j / 7.0), 0.75, shade);
-      if (k % 5 == 0 && p.z > 3 && tp[k].z.z > 0.5)
+      if (coaster_pillar(tp, k))
         for (Double_t z = 0.5; z < p.z; z += 0.3) stamp(ZPoint(p.x, p.y, z), 0.2, shade);
     }
-    for (const Puff& c : clouds)
+    for (const Puff& c : C.clouds)
       if (c.kind == 0) stamp(c.c, 0.9 * c.rx, 0.72);
     const TString pgm = GForm("%s/coaster_light_%d.pgm", gSystem->TempDirectory(), gSystem->GetPid());
     fp = fopen(pgm.Data(), "wb");
     fprintf(fp, "P5\n%d %d\n255\n", nl, nl);
     fwrite(&lm[0], 1, nl * nl, fp);
     fclose(fp);
-    CREATE_ADD_GLASS(light_map, ZImage, scene, "LightMap", 0);
+    CREATE_ADD_GLASS(light_map, ZImage, C.scene, "LightMap", 0);
     light_map->SetFile(pgm.Data());
     light_map->Load();
     light_map->SetEnvMode(GL_MODULATE);
@@ -531,7 +557,7 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     light_map->SetMinFilter(GL_LINEAR);
     gSystem->Unlink(pgm.Data());
 
-    CREATE_ADD_GLASS(ground, RectTerrain, scene, "Ground", 0);
+    CREATE_ADD_GLASS(ground, RectTerrain, C.scene, "Ground", 0);
     ground->SetFromArray(nc, nc, &hf[0]);
     ground->SetDx(hg.dc*m); ground->SetDy(hg.dc*m);
     ground->SetPos(hg.x0*m, hg.y0*m, 0);
@@ -544,7 +570,7 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     {
       const Double_t level = coaster_lake(c);
       if (level < -1e8) continue;
-      CREATE_ADD_GLASS(lake, SMorph, scene, "Lake", 0);
+      CREATE_ADD_GLASS(lake, SMorph, C.scene, "Lake", 0);
       lake->SetPos(c.x*m, c.y*m, level*m);
       lake->SetScales(1.05*c.r*m, 1.05*c.r*m, 0.02*m);
       lake->SetTLevel(6); lake->SetPLevel(48);
@@ -552,96 +578,131 @@ void coaster(Double_t mpu=0.2, Bool_t flight=false)
     }
   }
 
-  // The cart, and the seat the camera rides.
-  CREATE_ADD_GLASS(car, ZNode, scene, "Car", 0);
-  car->SetTrans(frame(tp[0].pos * m, tp[0].x, tp[0].z));
-  // An open half shell, textured and lit from both sides.
-  CREATE_ADD_GLASS(cart_img, ZImage, scene, "CartTexture", 0);
-  cart_img->SetFile("checker_4.png");
-  cart_img->Load();
-  CREATE_ADD_GLASS(cart_mod, ZGlLightModel, scene, "CartLightModel", 0);
-  cart_mod->SetLightModelOp(ZRnrModBase::O_On);
-  cart_mod->SetLiMoTwoSide(true);
-  cart_mod->SetShadeModelOp(ZRnrModBase::O_On);
-  cart_mod->SetFaceCullOp(ZRnrModBase::O_Off);
-  CREATE_ADD_GLASS(body, SMorph, car, "Body", 0);
-  body->SetPos(0, 0, 0.6*m);
-  body->SetScales(1.2*m, 0.75*m, 0.45*m);
-  body->SetPhiMean(0.75); body->SetPhiRange(0.5);
-  body->SetTLevel(16); body->SetPLevel(16);
-  body->SetColor(1, 0.3, 0.2);
-  body->SetTexture(cart_img);
-  body->SetTexXC(2);
-  body->SetRnrMod(cart_mod);
-  CREATE_ADD_GLASS(seat, ZNode, car, "Seat", 0);
-  seat->SetPos(-0.2*m, 0, 1.25*m);
-
-  // The sun's disc where the light comes from, with a halo, and the clouds;
-  // drawn last, as the halo and the higher clouds are blended.
-  CREATE_ADD_GLASS(blend, ZGlBlending, scene, "SkyBlending", 0);
-  blend->SetBlendOp(ZRnrModBase::O_On);
-  blend->SetDepthMaskOp(ZRnrModBase::O_Off);
-  const ZPoint sun_at = ZPoint(60, 20, 0) + sun_dir * 560.0;
-  CREATE_ADD_GLASS(sun_disc, SMorph, scene, "SunDisc", 0);
-  sun_disc->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
-  sun_disc->SetScale(18*m);
-  sun_disc->SetTLevel(16); sun_disc->SetPLevel(24);
-  sun_disc->SetColor(1, 0.97, 0.88);
-  sun_disc->SetRnrMod(sky_mod);
-  CREATE_ADD_GLASS(glow, ZGlBlending, scene, "SunGlow", 0);
-  glow->SetBlendOp(ZRnrModBase::O_On);
-  glow->SetBDstFac(GL_ONE);
-  glow->SetDepthMaskOp(ZRnrModBase::O_Off);
-  // Faint additive layers, so the glow fades outwards instead of saturating.
-  for (Double_t r : { 30.0, 50.0, 80.0 })
+  // The cart, an open half shell, textured and lit from both sides, and the
+  // seat the camera rides.
+  void coaster_cart(Coaster& C)
   {
-    CREATE_ADD_GLASS(halo, SMorph, scene, "SunHalo", 0);
-    halo->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
-    halo->SetScale(r*m);
-    halo->SetTLevel(16); halo->SetPLevel(24);
-    halo->SetColor(1, 0.9, 0.7, 0.07);
-    halo->MakeRnrModList(sky_mod);
-    halo->MakeRnrModList(glow);
+    const Double_t m = C.m;
+    CREATE_ADD_GLASS(car, ZNode, C.scene, "Car", 0);
+    car->SetTrans(frame(C.tp[0].pos * m, C.tp[0].x, C.tp[0].z));
+    C.car = car;
+    CREATE_ADD_GLASS(cart_img, ZImage, C.scene, "CartTexture", 0);
+    cart_img->SetFile("checker_4.png");
+    cart_img->Load();
+    CREATE_ADD_GLASS(cart_mod, ZGlLightModel, C.scene, "CartLightModel", 0);
+    cart_mod->SetLightModelOp(ZRnrModBase::O_On);
+    cart_mod->SetLiMoTwoSide(true);
+    cart_mod->SetShadeModelOp(ZRnrModBase::O_On);
+    cart_mod->SetFaceCullOp(ZRnrModBase::O_Off);
+    CREATE_ADD_GLASS(body, SMorph, car, "Body", 0);
+    body->SetPos(0, 0, 0.6*m);
+    body->SetScales(1.2*m, 0.75*m, 0.45*m);
+    body->SetPhiMean(0.75); body->SetPhiRange(0.5);
+    body->SetTLevel(16); body->SetPLevel(16);
+    body->SetColor(1, 0.3, 0.2);
+    body->SetTexture(cart_img);
+    body->SetTexXC(2);
+    body->SetRnrMod(cart_mod);
+    CREATE_ADD_GLASS(seat, ZNode, car, "Seat", 0);
+    seat->SetPos(-0.2*m, 0, 1.25*m);
+    C.seat = seat;
   }
 
-  CREATE_ADD_GLASS(cumuli, ZNode, scene, "Cumuli", 0);
-  CREATE_ADD_GLASS(altocumuli, ZNode, scene, "Altocumuli", 0);
-  altocumuli->SetRnrMod(blend);
-  CREATE_ADD_GLASS(cirri, ZNode, scene, "Cirri", 0);
-  cirri->MakeRnrModList(sky_mod);
-  cirri->MakeRnrModList(blend);
-  ZNode* cloud_dirs[3] = { cumuli, altocumuli, cirri };
-  const ZColor cloud_cols[3] = { ZColor(1, 1, 1), ZColor(0.97, 0.97, 1, 0.85), ZColor(1, 1, 1, 0.16) };
-  for (const Puff& c : clouds)
+  // The sun's disc where the light comes from, with a glow, and the clouds;
+  // added last and writing no depth, as gled has no pass that draws blended
+  // things after the rest.
+  void coaster_sun_and_clouds(Coaster& C)
   {
-    CREATE_ADD_GLASS(puff, SMorph, cloud_dirs[c.kind], "Puff", 0);
-    puff->SetPos(c.c.x*m, c.c.y*m, c.c.z*m);
-    puff->RotateLF(1, 2, c.yaw);
-    puff->SetScales(c.rx*m, c.ry*m, c.rz*m);
-    puff->SetTLevel(c.kind == 2 ? 6 : 8); puff->SetPLevel(c.kind == 2 ? 8 : 12);
-    const ZColor& col = cloud_cols[c.kind];
-    puff->SetColor(col.r(), col.g(), col.b(), col.a());
-  }
+    const Double_t m = C.m;
+    CREATE_ADD_GLASS(blend, ZGlBlending, C.scene, "SkyBlending", 0);
+    blend->SetBlendOp(ZRnrModBase::O_On);
+    blend->SetDepthMaskOp(ZRnrModBase::O_Off);
+    const ZPoint sun_at = coaster_centre + C.sun_dir * 560.0;
+    CREATE_ADD_GLASS(sun_disc, SMorph, C.scene, "SunDisc", 0);
+    sun_disc->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
+    sun_disc->SetScale(18*m);
+    sun_disc->SetTLevel(16); sun_disc->SetPLevel(24);
+    sun_disc->SetColor(1, 0.97, 0.88);
+    sun_disc->SetRnrMod(C.sky_mod);
+    CREATE_ADD_GLASS(glow, ZGlBlending, C.scene, "SunGlow", 0);
+    glow->SetBlendOp(ZRnrModBase::O_On);
+    glow->SetBDstFac(GL_ONE);
+    glow->SetDepthMaskOp(ZRnrModBase::O_Off);
+    // Faint additive layers, so the glow fades outwards instead of saturating.
+    for (Double_t r : { 30.0, 50.0, 80.0 })
+    {
+      CREATE_ADD_GLASS(halo, SMorph, C.scene, "SunHalo", 0);
+      halo->SetPos(sun_at.x*m, sun_at.y*m, sun_at.z*m);
+      halo->SetScale(r*m);
+      halo->SetTLevel(16); halo->SetPLevel(24);
+      halo->SetColor(1, 0.9, 0.7, 0.07);
+      halo->MakeRnrModList(C.sky_mod);
+      halo->MakeRnrModList(glow);
+    }
 
-  CREATE_ADD_GLASS(etor, Eventor, scene, "Eventor", 0);
+    CREATE_ADD_GLASS(cumuli, ZNode, C.scene, "Cumuli", 0);
+    CREATE_ADD_GLASS(altocumuli, ZNode, C.scene, "Altocumuli", 0);
+    altocumuli->SetRnrMod(blend);
+    CREATE_ADD_GLASS(cirri, ZNode, C.scene, "Cirri", 0);
+    cirri->MakeRnrModList(C.sky_mod);
+    cirri->MakeRnrModList(blend);
+    ZNode* cloud_dirs[3] = { cumuli, altocumuli, cirri };
+    const ZColor cloud_cols[3] = { ZColor(1, 1, 1), ZColor(0.97, 0.97, 1, 0.85), ZColor(1, 1, 1, 0.16) };
+    for (const Puff& c : C.clouds)
+    {
+      CREATE_ADD_GLASS(puff, SMorph, cloud_dirs[c.kind], "Puff", 0);
+      puff->SetPos(c.c.x*m, c.c.y*m, c.c.z*m);
+      puff->RotateLF(1, 2, c.yaw);
+      puff->SetScales(c.rx*m, c.ry*m, c.rz*m);
+      puff->SetTLevel(c.kind == 2 ? 6 : 8); puff->SetPLevel(c.kind == 2 ? 8 : 12);
+      const ZColor& col = cloud_cols[c.kind];
+      puff->SetColor(col.r(), col.g(), col.b(), col.a());
+    }
+  }
+}
+
+void coaster(Double_t mpu=0.2, Bool_t flight=false)
+{
+  ASSERT_MACRO(sun_demos);
+  Gled::theOne->AssertLibSet("Geom1");
+
+  Coaster C;
+  C.m = 1 / mpu;
+  C.g = 9.81;
+  const Double_t sun_el = 35 * TMath::DegToRad(), sun_az = 220 * TMath::DegToRad();
+  C.sun_dir.Set(std::cos(sun_el) * std::cos(sun_az), std::cos(sun_el) * std::sin(sun_az), std::sin(sun_el));
+  C.clouds = coaster_clouds();
+
+  C.scene = new Scene("Coaster Scene");
+  g_queen->CheckIn(C.scene);
+  g_queen->Add(C.scene);
+  g_scene = C.scene;
+
+  coaster_sky(C);
+  coaster_track(C);
+  coaster_ground(C);
+  coaster_cart(C);
+  coaster_sun_and_clouds(C);
+
+  CREATE_ADD_GLASS(etor, Eventor, C.scene, "Eventor", 0);
   etor->SetInterBeatMS(gSystem->Getenv("GLED_XR") ? 11 : 20);
   CREATE_ADD_GLASS(tmaker, TimeMaker, etor, "TimeMaker", 0);
   CREATE_ATT_GLASS(walker, WSWalker, tmaker, AddClient, "Walker", 0);
-  walker->SetSeed(line);
-  walker->SetNode(car);
+  walker->SetSeed(C.line);
+  walker->SetNode(C.car);
   walker->SetLoop(true);
   walker->SetFlight(flight);
-  walker->SetGravity(g*m);
+  walker->SetGravity(C.g * C.m);
 
-  printf("coaster: %d points, %.0f m, a lap in %.0f s.\n", n, 2.0*n, time);
+  printf("coaster: %d points, %.0f m, a lap in %.0f s.\n", int(C.tp.size()), 2.0 * C.tp.size(), C.lap);
 
   if (Gled::theOne->HasGUILibs())
   {
     eye();
-    g_pupil->SetCameraBase(seat);
+    g_pupil->SetCameraBase(C.seat);
     g_pupil->SetXrTilt(PupilInfo::XT_Ride);
-    g_pupil->SetNearClip(0.1*m);
-    g_pupil->SetFarClip(1500*m);
+    g_pupil->SetNearClip(0.1 * C.m);
+    g_pupil->SetFarClip(1500 * C.m);
     g_pupil->SetClearColor(0.6, 0.72, 0.9);
     // The camera sits on the seat once the pupil exists.
     TTimer::SingleShot(3000, "gled::PupilInfo", g_pupil, "EmitCameraHomeRay()");

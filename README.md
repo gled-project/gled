@@ -22,6 +22,7 @@ GitHub.
 | `libsets/<LibSet>/` | the sources, one directory per libset, each with its `demos/` |
 | `docs/gledimp.md` | *Gled for the impatient*: the concepts and the class directives that the code generators read |
 | `docs/glasses.md` | Notes on individual glasses: what their parameters do, device setup |
+| `docs/headset.md` | Gled in a VR headset through OpenXR: building, running, riding the camera base, controls, demos |
 
 The libsets are GledCore (the framework, the GUI and the GL renderer),
 Geom1 (geometry, images, terrains), Numerica, Audio1 (OpenAL sound), Net1,
