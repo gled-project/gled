@@ -95,6 +95,8 @@ public:
   Double_t      mStatsSum, mStatsMax, mStatsCulled, mStatsCulledParts, mStatsBlended, mStatsReplays;
   GTime         mStatsStart;
   virtual void  check_entry_frame(A_Rnr* rnr);
+  virtual void  check_deferred_frame(A_Rnr* rnr);
+  bool          modelview_is_pm_stack();
   virtual void  CheckCulled(const TString& what, const Float_t* ctr_ext);
 
   // NameStack

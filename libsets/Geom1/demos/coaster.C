@@ -618,12 +618,9 @@ namespace
   }
 
   // The sun's disc where the light comes from, with a glow, and the clouds.
-  // The disc and the glow sit among the clouds but stand for the sun far
-  // away, so they are drawn in order after the sky, without depth writes; the
-  // clouds follow, back to front. The light models' shade-model op turns
-  // depth writes on, which the opaque cumuli keep and the translucent clouds
-  // turn off again. The clouds are lit like the cart, the cumuli with more
-  // ambient light for the light they scatter.
+  // The disc and the glow stand for the far sun, so they are drawn in order
+  // after the sky; the clouds follow, back to front. Light models turn depth
+  // writes back on: the cumuli keep them; the thin clouds and the sun do not.
   void coaster_sun_and_clouds(Coaster& C)
   {
     const Double_t m = C.m;

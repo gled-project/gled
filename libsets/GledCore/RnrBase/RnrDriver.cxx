@@ -438,6 +438,7 @@ bool RnrDriver::may_defer()
 
 void RnrDriver::defer_blended(A_Rnr* rnr, A_Rnr* owner, Int_t depth)
 {
+  if (bCheckPrograms) check_deferred_frame(rnr);
   BlendedItem it;
   it.fRnr  = rnr;
   it.fNode = TopPMNode();

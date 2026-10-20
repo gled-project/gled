@@ -22,6 +22,8 @@ public:
 
   virtual void Draw(RnrDriver* rd);
   virtual void CleanUp(RnrDriver* rd);
+  // Its draw switches the lamp on for what follows, so it is never deferred.
+  virtual bool IsBlended(RnrDriver*) { return false; }
 
   int LampOn(RnrDriver* rd, const ZTrans* t=0);
   int LampOff(RnrDriver* rd);

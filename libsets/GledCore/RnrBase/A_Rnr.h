@@ -87,10 +87,11 @@ public:
   virtual bool GetCullBox(RnrDriver* rd, Float_t* ctr_ext) { return false; }
   // True when a draw changes state for what is drawn after the lens.
   virtual bool HasOutsideEffects();
-  // True when the draw goes to the blended pass; by default when the active ZGlBlending blends.
+  // True when the draw is blended, and so deferred where the driver allows;
+  // by default when the active ZGlBlending blends.
   virtual bool IsBlended(RnrDriver* rd);
-  // False for a mod that sets the matrices, or whose PreDraw is not a pure function
-  // of its lens: blended draws under it are drawn in place, not replayed.
+  // False for a mod that a replay would apply wrongly, eg one that sets the
+  // matrices: blended draws under it are drawn in place.
   virtual bool IsReplayable(RnrDriver* rd) { return true; }
 
   virtual void PreDraw(RnrDriver* rd) = 0;

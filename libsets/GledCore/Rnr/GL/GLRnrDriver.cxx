@@ -13,6 +13,7 @@
 #include <TMath.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 
 using namespace gled;
@@ -124,8 +125,6 @@ void GLRnrDriver::BeginRender()
 
 void GLRnrDriver::EndRender()
 {
-  if ( ! mBlended.empty()) FlushBlended();
-
   for(int l=0; l<mMaxLamps; ++l) {
     if(mLamps[l] != 0) {
       // std::cout <<"RnrDriver cleaning-up a dirty lamp ...\n";
@@ -193,8 +192,8 @@ void GLRnrDriver::FlushBlended()
     const ZTrans &v = mViewAtBegin;
     const Float_t z = v.CM(2,0)*it.fPos[0] + v.CM(2,1)*it.fPos[1] + v.CM(2,2)*it.fPos[2] + v.CM(2,3);
     // Distance along the view is -z; map the float to a monotone key, inverted for descending.
-    union { Float_t f; UInt_t u; } d = { -z };
-    UInt_t key = (d.u & 0x80000000u) ? ~d.u : (d.u | 0x80000000u);
+    const UInt_t u   = std::bit_cast<UInt_t>(-z);
+    const UInt_t key = (u & 0x80000000u) ? ~u : (u | 0x80000000u);
     mBlendedKeys.push_back(~key);
     mBlendedIdx.push_back(i);
   }
@@ -292,9 +291,8 @@ void GLRnrDriver::draw_blended(UInt_t ob, UInt_t oe)
   glPopAttrib();
 }
 
-void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
+bool GLRnrDriver::modelview_is_pm_stack()
 {
-  // The cull test assumes the GL modelview is the view times the PM stack.
   ZTrans mv, exp = mViewAtBegin * ToGCS();
   glGetDoublev(GL_MODELVIEW_MATRIX, mv.Array());
   Double_t d = 0, s = 0;
@@ -303,8 +301,23 @@ void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
     d = TMath::Max(d, TMath::Abs(mv[i] - exp[i]));
     s = TMath::Max(s, TMath::Abs(exp[i]));
   }
-  if (d > 1e-4 * TMath::Max(s, 1.0))
+  return d <= 1e-4 * TMath::Max(s, 1.0);
+}
+
+void GLRnrDriver::check_entry_frame(A_Rnr* rnr)
+{
+  // The cull test assumes the GL modelview is the view times the PM stack.
+  if ( ! modelview_is_pm_stack())
     printf("GLRnrDriver::check_entry_frame GL modelview differs from the PM stack at %s.\n",
+           rnr->fImg->fLens->Identify().Data());
+}
+
+void GLRnrDriver::check_deferred_frame(A_Rnr* rnr)
+{
+  // The replay draws at the PM stack's frame; a PreDraw that moves the
+  // modelview without pushing a PM entry would be drawn elsewhere.
+  if ( ! modelview_is_pm_stack())
+    printf("GLRnrDriver::check_deferred_frame GL modelview differs from the PM stack at blended %s.\n",
            rnr->fImg->fLens->Identify().Data());
 }
 

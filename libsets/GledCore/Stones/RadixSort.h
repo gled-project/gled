@@ -5,6 +5,7 @@
 #ifndef GledCore_RadixSort_H
 #define GledCore_RadixSort_H
 
+#include <bit>
 #include <numeric>
 #include <type_traits>
 #include <vector>
@@ -17,7 +18,10 @@ class RadixSort
 {
 public:
   static_assert(std::is_same<V, unsigned short>() || std::is_same<V, unsigned int>());
-  static_assert(std::is_same<R, unsigned short>() || std::is_same<R, unsigned int>());
+  // Ranks are 32-bit: 16-bit ones would wrap above 65535 values.
+  static_assert(std::is_same<R, unsigned int>());
+  // The passes take the bytes of each value least significant first.
+  static_assert(std::endian::native == std::endian::little);
 
   typedef unsigned char ubyte_t;
   static constexpr R c_NBytes = sizeof(V);

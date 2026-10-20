@@ -114,8 +114,8 @@ Blended draws, those under a `ZGlBlending` with blending on, are deferred
 and drawn after the opaque ones, in tree order or back to front by the
 blending's `RnrAlgo`; `RA_InPlace` and `GLED_RNR_BLENDED=0` draw them in
 place. **`blended.C`** draws two overlapping spheres of alpha 0.5, the near
-one first in the tree, dumps images under each pass and checks the colour of
-the overlap. One run cannot turn the pass off, so the macro reads
+one first in the tree, dumps images under each `RnrAlgo` and checks the
+colour of the overlap. One run cannot turn the pass off, so the macro reads
 `GLED_RNR_BLENDED` and expects the colours of the pass in place when it is 0.
 Both runs must print `blended: all passed`; on an off-screen X server
 (`Xvnc :77`, as at the top of this file):

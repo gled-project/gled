@@ -1,6 +1,6 @@
 // Two overlapping translucent spheres, the near one first in the tree, under
-// each blend pass; checks the colour of the overlap in dumped images. Run with
-// GLED_RNR_BLENDED=0 it expects the colours of the pass turned off; see test/README.md.
+// each ZGlBlending::RnrAlgo; checks the colour of the overlap in dumped images.
+// With GLED_RNR_BLENDED=0 it expects the colours of the pass off; see test/README.md.
 #include <Gled/GledNS.h>
 
 #include "sun_demos.C"

@@ -118,6 +118,7 @@ protected:
   static UInt_t sFrameCount;
 
   virtual void check_entry_frame(A_Rnr* rnr) {}
+  virtual void check_deferred_frame(A_Rnr* rnr) {}
 
   //----------------------------------------------------------------
   // Frame trace, written when GLED_RNR_TRACE gives a file prefix.
@@ -160,7 +161,7 @@ protected:
     ZGlBlending *fBlend;              // Set through NoteBlending while the mod's op runs.
     UChar_t      fKind;               // K_PreDraw, or K_Draw for an unscoped mod.
     Bool_t       bInPlace;            // Not replayable: blended draws under it are drawn in place.
-    Int_t        fDepth;              // Render depth of the op.
+    Int_t        fDepth;              // Index in mCalls of the op's program.
     Int_t        fEndDepth, fEndOp;   // Unscoped: the post op that ends its synthesised scope.
   };
   struct CallFrame
@@ -173,12 +174,12 @@ protected:
   std::vector<ModEntry>    mMods;
   std::vector<CallFrame>   mCalls;
   Int_t                    mNoteTarget;
-  UInt_t                   mModGen, mDeferGen; // Changes of mMods; mMods at the last deferral.
+  UInt_t                   mModGen, mDeferGen; // Changes of mMods; mModGen at the last deferral.
   std::vector<BlendedItem> mBlended;
   std::vector<BlendedMod>  mBlendedMods;
-  std::deque<PMSEntry>     mBlendedPMS; // Position entries for the replay; a deque does not move them.
+  std::deque<PMSEntry>     mBlendedPMS; // Position entries for the replay; PMSEntry must not be copied.
   Bool_t                   bBlendedPass;   // X{gs} Defer blended draws; GLED_RNR_BLENDED=0 turns it off.
-  Bool_t                   bDeferBlended;  // Until FlushBlended in a render.
+  Bool_t                   bDeferBlended;  // From BeginRender until FlushBlended.
   UInt_t                   mBlendedCount;  // X{g} Draws deferred in the last render.
   UInt_t                   mReplayCount;   // X{g} Mod replays in the last render.
 
