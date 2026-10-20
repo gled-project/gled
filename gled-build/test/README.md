@@ -110,10 +110,10 @@ cd $GLEDSYS/demos/GledCore
 GLED_RNR_CHECK=1 timeout 22 gled --noprompt $GLEDSYS/test/regress/rnr_cycle.C
 ```
 
-Blended draws, those under a `ZGlBlending` with blending on, are deferred
-and drawn after the opaque ones, in tree order or back to front by the
-blending's `RnrAlgo`; `RA_InPlace` and `GLED_RNR_BLENDED=0` draw them in
-place. **`blended.C`** draws two overlapping spheres of alpha 0.5, the near
+Blended draws, those under a `ZGlBlending` with blending on and an
+`RnrAlgo` of `RA_Sorted` or `RA_Ordered`, are deferred and drawn after the
+opaque ones, back to front or in tree order; `RA_InPlace`, the default, and
+`GLED_RNR_BLENDED=0` draw them in place (`docs/glasses.md`). **`blended.C`** draws two overlapping spheres of alpha 0.5, the near
 one first in the tree, dumps images under each `RnrAlgo` and checks the
 colour of the overlap. One run cannot turn the pass off, so the macro reads
 `GLED_RNR_BLENDED` and expects the colours of the pass in place when it is 0.

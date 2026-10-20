@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <vector>
 
 using namespace gled;
 
@@ -34,6 +35,8 @@ GLRnrDriver::GLRnrDriver(Eye* e, const TString& r) : RnrDriver(e, r)
   mStatsEvery = stats ? atoi(stats) : 0;
   mStatsN = 0;
   mStatsSum = mStatsMax = mStatsCulled = mStatsCulledParts = mStatsBlended = mStatsReplays = 0;
+
+  bBaseState = bBasePushed = false; mBaseAttribDepth = 0;
 
   mMaxLamps = 8;
   mLamps = new A_Rnr* [mMaxLamps];
@@ -120,11 +123,20 @@ void GLRnrDriver::BeginRender()
     mClipPlanes[i] = 0;
   }
   bInDLRebuild = false;
+
+  bBasePushed = bBaseState && bDeferBlended && ! bInPicking;
+  if (bBasePushed)
+  {
+    glGetIntegerv(GL_ATTRIB_STACK_DEPTH, &mBaseAttribDepth);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+  }
 }
 
 
 void GLRnrDriver::EndRender()
 {
+  pop_to_base();
+  if (mBlendedCount > 0) bBaseState = true;
   for(int l=0; l<mMaxLamps; ++l) {
     if(mLamps[l] != 0) {
       // std::cout <<"RnrDriver cleaning-up a dirty lamp ...\n";
@@ -177,6 +189,7 @@ void GLRnrDriver::FlushBlended()
   } _clear { this };
 
   bDeferBlended = false;
+  pop_to_base();
   const UInt_t n = mBlended.size();
   if (n == 0) return;
 
@@ -222,6 +235,60 @@ void GLRnrDriver::FlushBlended()
     const Int_t beg = mBlended[mBlendedOrder[b]].fModBeg;
     for (e = b + 1; e < no && mBlended[mBlendedOrder[e]].fModBeg == beg; ++e) ;
     draw_blended(b, e);
+  }
+  glPopMatrix();
+}
+
+void GLRnrDriver::pop_to_base()
+{
+  // Back to the state pushed in BeginRender, keeping the lamps the scene
+  // turned on: their parameters are read back in eye coordinates.
+  if ( ! bBasePushed) return;
+  bBasePushed = false;
+
+  struct Light { GLfloat pos[4], dif[4], amb[4], spe[4], dir[3], cut, exp, att[3]; };
+  std::vector<Light> lights(mMaxLamps);
+  for (int l = 0; l < mMaxLamps; ++l)
+  {
+    if ( ! mLamps[l]) continue;
+    const GLenum L = GL_LIGHT0 + l;
+    Light &x = lights[l];
+    glGetLightfv(L, GL_POSITION, x.pos);
+    glGetLightfv(L, GL_DIFFUSE,  x.dif);
+    glGetLightfv(L, GL_AMBIENT,  x.amb);
+    glGetLightfv(L, GL_SPECULAR, x.spe);
+    glGetLightfv(L, GL_SPOT_DIRECTION, x.dir);
+    glGetLightfv(L, GL_SPOT_CUTOFF,    &x.cut);
+    glGetLightfv(L, GL_SPOT_EXPONENT,  &x.exp);
+    glGetLightfv(L, GL_CONSTANT_ATTENUATION,  &x.att[0]);
+    glGetLightfv(L, GL_LINEAR_ATTENUATION,    &x.att[1]);
+    glGetLightfv(L, GL_QUADRATIC_ATTENUATION, &x.att[2]);
+  }
+
+  GLint d;
+  glGetIntegerv(GL_ATTRIB_STACK_DEPTH, &d);
+  // A scene that threw may have unwound the stack below the push already.
+  for ( ; d > mBaseAttribDepth; --d) glPopAttrib();
+
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+  for (int l = 0; l < mMaxLamps; ++l)
+  {
+    if ( ! mLamps[l]) continue;
+    const GLenum L = GL_LIGHT0 + l;
+    const Light &x = lights[l];
+    glLightfv(L, GL_POSITION, x.pos);
+    glLightfv(L, GL_DIFFUSE,  x.dif);
+    glLightfv(L, GL_AMBIENT,  x.amb);
+    glLightfv(L, GL_SPECULAR, x.spe);
+    glLightfv(L, GL_SPOT_DIRECTION, x.dir);
+    glLightf(L, GL_SPOT_CUTOFF,    x.cut);
+    glLightf(L, GL_SPOT_EXPONENT,  x.exp);
+    glLightf(L, GL_CONSTANT_ATTENUATION,  x.att[0]);
+    glLightf(L, GL_LINEAR_ATTENUATION,    x.att[1]);
+    glLightf(L, GL_QUADRATIC_ATTENUATION, x.att[2]);
+    glEnable(L);
   }
   glPopMatrix();
 }

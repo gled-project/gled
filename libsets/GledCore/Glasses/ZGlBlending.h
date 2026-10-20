@@ -17,8 +17,8 @@ class ZGlBlending : public ZRnrModBase
   MAC_RNR_FRIENDS(ZGlBlending);
 
 public:
-  // How the draws this mod blends are rendered: after the opaque ones,
-  // sorted back to front or in tree order before the sorted ones; or in place.
+  // How the draws this mod blends are rendered: in place (the default), or
+  // after the opaque ones, sorted back to front or in tree order before those.
   enum RnrAlgo_e { RA_Sorted, RA_Ordered, RA_InPlace };
 
 private:

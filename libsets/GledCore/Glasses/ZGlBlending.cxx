@@ -24,7 +24,7 @@ void ZGlBlending::_init()
   mBDstFac   = GL_ONE_MINUS_SRC_ALPHA;
   mBEquation = GL_FUNC_ADD;
   mBConstCol.rgba(0.5, 0.5, 0.5, 0.5);
-  mRnrAlgo = RA_Sorted;
+  mRnrAlgo = RA_InPlace;
 
   mAntiAliasOp = O_Nop;
   bPointSmooth = true;

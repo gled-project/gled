@@ -3,6 +3,37 @@
 What some glasses do and how their parameters work, beyond what their GUI
 shows.
 
+## GledCore
+
+### ZGlBlending::RnrAlgo
+
+Says where the draws under a blending go:
+
+- `RA_InPlace`, the default: where they are in the tree, as without the
+  blended pass.
+- `RA_Sorted`: held back, and drawn after everything else in the scene, far
+  to near by each lens's origin, or by its cull-box centre when it has one.
+  Use it for translucent things that overlap, such as clouds or tubes. They
+  are sorted as single points, so objects that lie inside each other can
+  come out in the wrong order.
+- `RA_Ordered`: held back too, but drawn in tree order, before the sorted
+  ones. Use it for what must come first, or must not swap as the view moves:
+  a sky dome, a distant sun, flat panels in the scene.
+
+The innermost `ZGlBlending` whose `BlendOp` is not Nop decides. Held-back
+draws are made with depth writes off, unless one of their mods turns them
+on: a `ZGlLightModel` with its shade-model op on does, so set
+`DepthMaskOp` Off on the blending if needed. They start from the GL state at
+the start of the scene, with the scene's lamps on, so give them their own
+mods rather than relying on state left by other parts of the scene.
+
+Draws are always made in place in picking, in display lists, in the
+pupil's overlay, under a `ZGlPerspective` or a `ZRlNameStack`, and for
+lamps. A renderer whose PreDraw moves the GL modelview without going
+through the position stack, as `Extendio`'s does, would be held back to a
+wrong place; `GLED_RNR_CHECK=1` reports it. `GLED_RNR_BLENDED=0` turns the
+pass off. `Geom1/demos/coaster.C` uses both kinds for its sky and clouds.
+
 ## Geom1
 
 ### GForger

@@ -75,6 +75,13 @@ protected:
   void push_blended_frame(PMSEntry& pmse, ZNode* node, const ZTrans& gcs);
   void draw_blended(UInt_t ob, UInt_t oe);
 
+  // GL state at the start of the scene, restored before the blended draws so
+  // that state leaked in the scene does not reach them; lamps are kept. Only
+  // once the driver has deferred a draw, so other scenes are left as they were.
+  bool  bBaseState, bBasePushed;
+  GLint mBaseAttribDepth;
+  void  pop_to_base();
+
 public:
   GLRnrDriver(Eye* e, const TString& r);
   virtual ~GLRnrDriver();

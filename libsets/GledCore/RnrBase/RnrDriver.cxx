@@ -281,6 +281,8 @@ void RnrDriver::Render(A_Rnr* rnr)
   const vRnrOp_t &ops   = rnr->mProgram->fOps;
   const Int_t     n     = ops.size();
   const Int_t     depth = mCalls.size();
+  // Mods are tracked only where a draw could be deferred.
+  const bool      track = can_defer();
   mCalls.push_back({ &ops, 0, mPMStack.back() });
   PopBackGuard<CallFrame> _call_guard(mCalls);
 
@@ -303,7 +305,7 @@ void RnrDriver::Render(A_Rnr* rnr)
       {
         if (mTraceFile) trace_op(op.fRnr, "pre");
         // Pre ops of other renderers are mods (links, rnr-mods); the lens's own pre is its frame.
-        if (op.fRnr != rnr)
+        if (track && op.fRnr != rnr)
         {
           push_mod(op.fRnr, RnrOp::K_PreDraw, depth);
           mNoteTarget = mMods.size() - 1;
@@ -317,12 +319,15 @@ void RnrDriver::Render(A_Rnr* rnr)
         if (op.fRnr->HasOutsideEffects())
         {
           if (mTraceFile) trace_op(op.fRnr, "draw");
-          push_unscoped(op.fRnr, depth);
-          mNoteTarget = mMods.size() - 1;
+          if (track)
+          {
+            push_unscoped(op.fRnr, depth);
+            mNoteTarget = mMods.size() - 1;
+          }
           op.fRnr->Draw(this);
           mNoteTarget = -1;
         }
-        else if (can_defer() && op.fRnr->IsBlended(this) && may_defer())
+        else if (track && op.fRnr->IsBlended(this) && may_defer())
         {
           if (mTraceFile) trace_op(op.fRnr, "defer");
           defer_blended(op.fRnr, rnr, depth);
@@ -338,7 +343,7 @@ void RnrDriver::Render(A_Rnr* rnr)
       {
         if (mTraceFile) trace_op(op.fRnr, "post");
         op.fRnr->PostDraw(this);
-        if (op.fRnr != rnr && ! mMods.empty()) pop_mod(op.fRnr, depth);
+        if (track && op.fRnr != rnr && ! mMods.empty()) pop_mod(op.fRnr, depth);
         break;
       }
     }
