@@ -17,9 +17,9 @@ class ZGlBlending : public ZRnrModBase
   MAC_RNR_FRIENDS(ZGlBlending);
 
 public:
-  // Blended draws go to the blended pass in tree order before the sorted ones,
-  // or sorted back to front, or are drawn in place.
-  enum BlendPass_e { BP_InOrder, BP_BackToFront, BP_InPlace };
+  // How the draws this mod blends are rendered: after the opaque ones,
+  // sorted back to front or in tree order before the sorted ones; or in place.
+  enum RnrAlgo_e { RA_Sorted, RA_Ordered, RA_InPlace };
 
 private:
   void _init();
@@ -33,7 +33,7 @@ protected:
   Int_t		mBDstFac;     // X{GS}  7 PhonyEnum(-width=>10, -vals=>[GL_ZERO,Zero, GL_ONE,One, GL_SRC_COLOR,SrcColor, GL_ONE_MINUS_SRC_COLOR,OMSrcColor, GL_SRC_ALPHA,SrcAlpha, GL_ONE_MINUS_SRC_ALPHA,OMSrcAlpha, GL_DST_ALPHA,DstAplha, GL_ONE_MINUS_DST_ALPHA,OMDstAlpha, GL_CONSTANT_COLOR,ConstColor, GL_ONE_MINUS_CONSTANT_COLOR,OMConstCol, GL_CONSTANT_ALPHA,ConstAlpha, GL_ONE_MINUS_CONSTANT_ALPHA,OMConstAlpha])
   Int_t		mBEquation;   // X{GS}  7 PhonyEnum(-width=>10, -vals=>[GL_FUNC_ADD,Add, GL_FUNC_SUBTRACT,Sub, GL_FUNC_REVERSE_SUBTRACT,ReverseSub, GL_MIN,Min, GL_MAX,Max], -join=>1)
   ZColor	mBConstCol;   // X{PGS} 7 ColorButt()
-  BlendPass_e   mBlendPass;   // X{GS}  7 PhonyEnum()
+  RnrAlgo_e     mRnrAlgo;     // X{GS}  7 PhonyEnum()
 
   // Antialiasing points, lines
   ZRnrModBase::Operation_e

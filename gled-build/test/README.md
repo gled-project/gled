@@ -112,7 +112,7 @@ GLED_RNR_CHECK=1 timeout 22 gled --noprompt $GLEDSYS/test/regress/rnr_cycle.C
 
 Blended draws, those under a `ZGlBlending` with blending on, are deferred
 and drawn after the opaque ones, in tree order or back to front by the
-blending's `BlendPass`; `BP_InPlace` and `GLED_RNR_BLENDED=0` draw them in
+blending's `RnrAlgo`; `RA_InPlace` and `GLED_RNR_BLENDED=0` draw them in
 place. **`blended.C`** draws two overlapping spheres of alpha 0.5, the near
 one first in the tree, dumps images under each pass and checks the colour of
 the overlap. One run cannot turn the pass off, so the macro reads

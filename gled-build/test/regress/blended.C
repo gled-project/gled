@@ -17,7 +17,7 @@ namespace
   Sphere      *bl_near = 0, *bl_far = 0;
   ZGlBlending *bl_blend = 0;
   TString      bl_stem;
-  const char  *bl_shots[] = { "near", "far", "backtofront", "inorder", "inplace" };
+  const char  *bl_shots[] = { "near", "far", "sorted", "ordered", "inplace" };
 
   TString bl_file(int i) { return GForm("%s_%s", bl_stem.Data(), bl_shots[i]); }
 
@@ -100,11 +100,11 @@ void blended_tick()
     case 2:  g_pupil->EmitDumpImageRay(bl_file(0), 1, false, false); break;
     case 3:  bl_far->SetRnrSelf(true); bl_near->SetRnrSelf(false); break;
     case 4:  g_pupil->EmitDumpImageRay(bl_file(1), 1, false, false); break;
-    case 5:  bl_near->SetRnrSelf(true); bl_blend->SetBlendPass(ZGlBlending::BP_BackToFront); break;
+    case 5:  bl_near->SetRnrSelf(true); bl_blend->SetRnrAlgo(ZGlBlending::RA_Sorted); break;
     case 6:  g_pupil->EmitDumpImageRay(bl_file(2), 1, false, false); break;
-    case 7:  bl_blend->SetBlendPass(ZGlBlending::BP_InOrder); break;
+    case 7:  bl_blend->SetRnrAlgo(ZGlBlending::RA_Ordered); break;
     case 8:  g_pupil->EmitDumpImageRay(bl_file(3), 1, false, false); break;
-    case 9:  bl_blend->SetBlendPass(ZGlBlending::BP_InPlace); break;
+    case 9:  bl_blend->SetRnrAlgo(ZGlBlending::RA_InPlace); break;
     case 10: g_pupil->EmitDumpImageRay(bl_file(4), 1, false, false); break;
     case 12: bl_analyse(); break;
   }

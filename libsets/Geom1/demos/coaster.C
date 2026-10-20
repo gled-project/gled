@@ -348,11 +348,11 @@ namespace
     sky->SetScale(600*m);
     sky->SetTLevel(24); sky->SetPLevel(48);
     sky->SetTexture(sky_img);
-    CREATE_ADD_GLASS(sky_pass, ZGlBlending, mods, "SkyPass", 0);
-    sky_pass->SetBlendOp(ZRnrModBase::O_On);
-    sky_pass->SetBlendPass(ZGlBlending::BP_InOrder);
+    CREATE_ADD_GLASS(sky_blend, ZGlBlending, mods, "SkyDomeBlend", 0);
+    sky_blend->SetBlendOp(ZRnrModBase::O_On);
+    sky_blend->SetRnrAlgo(ZGlBlending::RA_Ordered);
     sky->MakeRnrModList(sky_mod);
-    sky->MakeRnrModList(sky_pass);
+    sky->MakeRnrModList(sky_blend);
   }
 
   // The centre line the cart rides, hidden, with its points banked; the
@@ -629,16 +629,16 @@ namespace
     const Double_t m = C.m;
     CREATE_ADD_GLASS(blend, ZGlBlending, C.mods, "SkyBlending", 0);
     blend->SetBlendOp(ZRnrModBase::O_On);
-    blend->SetBlendPass(ZGlBlending::BP_BackToFront);
+    blend->SetRnrAlgo(ZGlBlending::RA_Sorted);
     blend->SetDepthMaskOp(ZRnrModBase::O_Off);
     CREATE_ADD_GLASS(cloud_mod, ZGlLightModel, C.mods, "CloudLightModel", 0);
     cloud_mod->SetLightModelOp(ZRnrModBase::O_On);
     cloud_mod->SetLiMoTwoSide(true);
     cloud_mod->SetShadeModelOp(ZRnrModBase::O_On);
     cloud_mod->SetFaceCullOp(ZRnrModBase::O_Off);
-    CREATE_ADD_GLASS(cumulus_pass, ZGlBlending, C.mods, "CumulusPass", 0);
-    cumulus_pass->SetBlendOp(ZRnrModBase::O_On);
-    cumulus_pass->SetBlendPass(ZGlBlending::BP_BackToFront);
+    CREATE_ADD_GLASS(cumulus_blend, ZGlBlending, C.mods, "CumulusBlend", 0);
+    cumulus_blend->SetBlendOp(ZRnrModBase::O_On);
+    cumulus_blend->SetRnrAlgo(ZGlBlending::RA_Sorted);
     CREATE_ADD_GLASS(cumulus_mod, ZGlLightModel, C.mods, "CumulusLightModel", 0);
     cumulus_mod->SetLightModelOp(ZRnrModBase::O_On);
     cumulus_mod->SetLiMoAmbient(0.55, 0.55, 0.6);
@@ -651,15 +651,15 @@ namespace
     sun_disc->SetScale(18*m);
     sun_disc->SetTLevel(16); sun_disc->SetPLevel(24);
     sun_disc->SetColor(1, 0.97, 0.88);
-    CREATE_ADD_GLASS(sun_pass, ZGlBlending, C.mods, "SunPass", 0);
-    sun_pass->SetBlendOp(ZRnrModBase::O_On);
-    sun_pass->SetBlendPass(ZGlBlending::BP_InOrder);
-    sun_pass->SetDepthMaskOp(ZRnrModBase::O_Off);
+    CREATE_ADD_GLASS(sun_blend, ZGlBlending, C.mods, "SunBlend", 0);
+    sun_blend->SetBlendOp(ZRnrModBase::O_On);
+    sun_blend->SetRnrAlgo(ZGlBlending::RA_Ordered);
+    sun_blend->SetDepthMaskOp(ZRnrModBase::O_Off);
     sun_disc->MakeRnrModList(C.sky_mod);
-    sun_disc->MakeRnrModList(sun_pass);
+    sun_disc->MakeRnrModList(sun_blend);
     CREATE_ADD_GLASS(glow, ZGlBlending, C.mods, "SunGlow", 0);
     glow->SetBlendOp(ZRnrModBase::O_On);
-    glow->SetBlendPass(ZGlBlending::BP_InOrder);
+    glow->SetRnrAlgo(ZGlBlending::RA_Ordered);
     glow->SetBDstFac(GL_ONE);
     glow->SetDepthMaskOp(ZRnrModBase::O_Off);
     // Faint additive layers, so the glow fades outwards instead of saturating.
@@ -676,7 +676,7 @@ namespace
 
     CREATE_ADD_GLASS(cumuli, ZNode, C.scene, "Cumuli", 0);
     cumuli->MakeRnrModList(cumulus_mod);
-    cumuli->MakeRnrModList(cumulus_pass);
+    cumuli->MakeRnrModList(cumulus_blend);
     CREATE_ADD_GLASS(altocumuli, ZNode, C.scene, "Altocumuli", 0);
     altocumuli->MakeRnrModList(cloud_mod);
     altocumuli->MakeRnrModList(blend);

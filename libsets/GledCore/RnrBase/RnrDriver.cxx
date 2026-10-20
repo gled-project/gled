@@ -433,7 +433,7 @@ bool RnrDriver::may_defer()
     if (i->bInPlace) return false;
     if ( ! b) b = i->fBlend;
   }
-  return ! b || b->GetBlendPass() != ZGlBlending::BP_InPlace;
+  return ! b || b->GetRnrAlgo() != ZGlBlending::RA_InPlace;
 }
 
 void RnrDriver::defer_blended(A_Rnr* rnr, A_Rnr* owner, Int_t depth)
@@ -455,7 +455,7 @@ void RnrDriver::defer_blended(A_Rnr* rnr, A_Rnr* owner, Int_t depth)
     for (int i = 0; i < 3; ++i) it.fPos[i] = it.fGCS.CM(i,3);
   }
   ZGlBlending *b = ActiveBlending();
-  it.bSorted = ! b || b->GetBlendPass() == ZGlBlending::BP_BackToFront;
+  it.bSorted = ! b || b->GetRnrAlgo() == ZGlBlending::RA_Sorted;
   if ( ! mBlended.empty() && mDeferGen == mModGen)
   {
     it.fModBeg = mBlended.back().fModBeg;
